@@ -3,7 +3,7 @@ import requests
 import re
 
 VT_API = "a2e11c16ab7df4754b0b4ebf4feaa9320a96415cacc73065ffade9720411b916"
-ABUSE_API = "TU_API_ABUSE"
+ABUSE_API = "4edd8009768e2dce4160c8646b7990ac74e4f0d90840701d4fb81004dd629b5b916b5edfb8a404af"
 
 st.title("SOC IOC Checker")
 
