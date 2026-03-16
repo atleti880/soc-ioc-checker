@@ -152,6 +152,12 @@ def render_vt_score_card(malicious: int, total: int):
     st.markdown(card_html, unsafe_allow_html=True)
 
 
+def render_abuse_score_bar(score: int, reports: int):
+    st.subheader("AbuseIPDB Score")
+    st.write(f"Esta IP ha sido reportada **{reports}** veces. Confidence of Abuse: **{score}%**")
+    st.progress(min(max(score, 0), 100))
+
+
 # -------------------------
 # API lookups
 # -------------------------
@@ -187,9 +193,6 @@ if ioc:
 
     with st.spinner("Consultando fuentes de inteligencia..."):
 
-        # =========================
-        # IP
-        # =========================
         if is_ip(ioc):
             st.info("Tipo detectado: IP")
 
@@ -202,7 +205,6 @@ if ioc:
 
             vt_malicious = 0
             vt_suspicious = 0
-            vt_harmless = 0
             vt_total = 0
             country_code = "N/A"
             as_owner = "N/A"
@@ -216,7 +218,6 @@ if ioc:
                 stats = attr.get("last_analysis_stats", {})
                 vt_malicious = stats.get("malicious", 0)
                 vt_suspicious = stats.get("suspicious", 0)
-                vt_harmless = stats.get("harmless", 0)
                 vt_total = total_engines_from_stats(stats)
                 country_code = attr.get("country", "N/A")
                 as_owner = attr.get("as_owner", "N/A")
@@ -254,6 +255,8 @@ if ioc:
                 m3.metric("Abuse Score", abuse_score)
                 m4.metric("Reports", reports)
 
+            render_abuse_score_bar(abuse_score, reports)
+
             st.subheader("Contexto")
             country_name = country_name_from_code(country_code)
             c1, c2, c3 = st.columns(3)
@@ -276,9 +279,6 @@ Conclusión: {verdict}
             st.subheader("Texto para ticket")
             st.code(ticket_text, language="text")
 
-        # =========================
-        # HASH
-        # =========================
         elif is_hash(ioc):
             st.info("Tipo detectado: Hash")
 
@@ -344,9 +344,6 @@ Conclusión: {verdict}
             else:
                 show_api_error("VirusTotal", vt_response)
 
-        # =========================
-        # URL
-        # =========================
         elif is_url(ioc):
             st.info("Tipo detectado: URL")
 
