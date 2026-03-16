@@ -9,8 +9,19 @@ st.title("SOC IOC Checker")
 
 ioc = st.text_input("Introduce IP / URL / Hash")
 
+# ------------------------
+# Detectar tipo de IOC
+# ------------------------
+
 def is_ip(value):
     return re.match(r"\d+\.\d+\.\d+\.\d+", value)
+
+def is_hash(value):
+    return re.match(r"^[A-Fa-f0-9]{32,64}$", value)
+
+# ------------------------
+# VirusTotal IP
+# ------------------------
 
 def vt_ip_lookup(ip):
 
@@ -23,6 +34,26 @@ def vt_ip_lookup(ip):
     response = requests.get(url, headers=headers)
 
     return response.json()
+
+# ------------------------
+# VirusTotal HASH
+# ------------------------
+
+def vt_hash_lookup(hash_value):
+
+    url = f"https://www.virustotal.com/api/v3/files/{hash_value}"
+
+    headers = {
+        "x-apikey": VT_API
+    }
+
+    response = requests.get(url, headers=headers)
+
+    return response.json()
+
+# ------------------------
+# AbuseIPDB
+# ------------------------
 
 def abuse_lookup(ip):
 
@@ -41,7 +72,15 @@ def abuse_lookup(ip):
 
     return response.json()
 
+# ------------------------
+# Lógica principal
+# ------------------------
+
 if ioc:
+
+    # ----------------
+    # IP
+    # ----------------
 
     if is_ip(ioc):
 
@@ -72,6 +111,30 @@ if ioc:
 
         except:
             st.write("No data")
+
+    # ----------------
+    # HASH
+    # ----------------
+
+    elif is_hash(ioc):
+
+        st.subheader("VirusTotal File Analysis")
+
+        vt = vt_hash_lookup(ioc)
+
+        try:
+
+            stats = vt["data"]["attributes"]["last_analysis_stats"]
+            name = vt["data"]["attributes"]["meaningful_name"]
+
+            st.write("File name:", name)
+            st.write("Malicious:", stats["malicious"])
+            st.write("Suspicious:", stats["suspicious"])
+            st.write("Harmless:", stats["harmless"])
+
+        except:
+
+            st.write("Hash no encontrado en VirusTotal")
 
     else:
 
