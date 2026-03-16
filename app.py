@@ -33,10 +33,17 @@ def is_hash(value: str) -> bool:
     return re.fullmatch(r"([A-Fa-f0-9]{32}|[A-Fa-f0-9]{40}|[A-Fa-f0-9]{64})", value) is not None
 
 
+def normalize_url(value: str) -> str:
+    value = value.strip()
+    if not value.startswith(("http://", "https://")):
+        value = "http://" + value
+    return value
+
+
 def is_url(value: str) -> bool:
     try:
-        parsed = urlparse(value)
-        return parsed.scheme in ("http", "https") and bool(parsed.netloc)
+        parsed = urlparse(normalize_url(value))
+        return bool(parsed.netloc)
     except Exception:
         return False
 
@@ -345,6 +352,7 @@ Conclusión: {verdict}
                 show_api_error("VirusTotal", vt_response)
 
         elif is_url(ioc):
+            ioc = normalize_url(ioc)
             st.info("Tipo detectado: URL")
 
             try:
