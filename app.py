@@ -1,5 +1,6 @@
 import base64
 import re
+from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 import pycountry
@@ -19,10 +20,6 @@ st.caption("Consulta IP / URL / Hash en VirusTotal y AbuseIPDB")
 
 ioc = st.text_input("Introduce IP / URL / Hash")
 
-
-# -------------------------
-# Validación
-# -------------------------
 
 def is_ip(value: str) -> bool:
     pattern = r"^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$"
@@ -47,10 +44,6 @@ def is_url(value: str) -> bool:
     except Exception:
         return False
 
-
-# -------------------------
-# Utilidades
-# -------------------------
 
 def safe_json(response: requests.Response) -> dict:
     try:
@@ -94,6 +87,16 @@ def format_file_size(size):
                 return f"{int(size)} {unit}"
             return f"{size:.2f} {unit}"
         size /= 1024
+
+
+def format_unix_timestamp(ts):
+    if ts in (None, "", "N/A"):
+        return "N/A"
+    try:
+        dt = datetime.fromtimestamp(int(ts), tz=timezone.utc)
+        return dt.strftime("%Y-%m-%d %H:%M:%S UTC")
+    except Exception:
+        return str(ts)
 
 
 def get_verdict(vt_malicious: int = 0, vt_suspicious: int = 0, abuse_score: int = 0):
@@ -190,10 +193,6 @@ def normalize_verification_text(value) -> str:
 
 
 def extract_signature_info(vt_attributes: dict) -> dict:
-    """
-    Extrae el estado real de la firma digital desde varios campos posibles
-    de VirusTotal y evita falsos positivos/negativos.
-    """
     result = {
         "is_signed": False,
         "is_valid": False,
@@ -212,7 +211,6 @@ def extract_signature_info(vt_attributes: dict) -> dict:
     pe_info = vt_attributes.get("pe_info", {})
     version_info = vt_attributes.get("file_version_info", {})
 
-    # 1) Candidatos de texto de verificación, por prioridad
     verification_candidates = [
         vt_attributes.get("signature_verification"),
         vt_attributes.get("signature verification"),
@@ -244,7 +242,6 @@ def extract_signature_info(vt_attributes: dict) -> dict:
     verified_lower = verified_text.lower()
     result["verified"] = verified_text
 
-    # 2) Decidir si está firmado y si la firma parece válida
     if any(x in verified_lower for x in ["not signed", "unsigned", "file is not signed"]):
         result["is_signed"] = False
         result["is_valid"] = False
@@ -258,7 +255,6 @@ def extract_signature_info(vt_attributes: dict) -> dict:
         result["is_signed"] = True
         result["is_valid"] = False
     else:
-        # Fallback: si hay evidencias fuertes de firma, marcar como firmado
         has_signature_artifacts = any([
             isinstance(signature_info, dict) and len(signature_info) > 0,
             isinstance(signatures, list) and len(signatures) > 0,
@@ -270,7 +266,6 @@ def extract_signature_info(vt_attributes: dict) -> dict:
             result["is_signed"] = True
             result["is_valid"] = False
 
-    # 3) Extraer signers / publisher / metadata
     if isinstance(signature_info, dict) and signature_info:
         signers = signature_info.get("signers") or signature_info.get("signer") or []
         if isinstance(signers, str):
@@ -348,7 +343,6 @@ def extract_signature_info(vt_attributes: dict) -> dict:
             if ds:
                 result["date_signed"] = str(ds)
 
-    # 4) File version info
     if not isinstance(version_info, dict):
         version_info = {}
 
@@ -378,9 +372,14 @@ def extract_signature_info(vt_attributes: dict) -> dict:
     return result
 
 
-# -------------------------
-# API lookups
-# -------------------------
+def extract_history_info(vt_attributes: dict) -> dict:
+    return {
+        "creation_time": format_unix_timestamp(vt_attributes.get("creation_date")),
+        "first_submission": format_unix_timestamp(vt_attributes.get("first_submission_date")),
+        "last_submission": format_unix_timestamp(vt_attributes.get("last_submission_date")),
+        "last_analysis": format_unix_timestamp(vt_attributes.get("last_analysis_date")),
+    }
+
 
 def vt_ip_lookup(ip: str) -> requests.Response:
     url = f"https://www.virustotal.com/api/v3/ip_addresses/{ip}"
@@ -403,10 +402,6 @@ def abuse_lookup(ip: str) -> requests.Response:
     params = {"ipAddress": ip, "maxAgeInDays": 90}
     return requests.get(url, headers=ABUSE_HEADERS, params=params, timeout=20)
 
-
-# -------------------------
-# Main
-# -------------------------
 
 if ioc:
     ioc = ioc.strip()
@@ -523,6 +518,7 @@ Conclusión: {verdict}
                 sha256 = attr.get("sha256", "N/A")
 
                 signature = extract_signature_info(attr)
+                history = extract_history_info(attr)
 
                 verdict, severity = get_verdict(vt_malicious, vt_suspicious, 0)
                 show_verdict(verdict, severity)
@@ -548,6 +544,13 @@ Conclusión: {verdict}
                 c1.write(f"**Nombre de archivo:** {file_name}")
                 c2.write(f"**Tipo de archivo:** {file_type}")
                 c3.write(f"**Tamaño:** {format_file_size(size)}")
+
+                st.subheader("History")
+                h1, h2, h3, h4 = st.columns(4)
+                h1.write(f"**Creation Time:** {history['creation_time']}")
+                h2.write(f"**First Submission:** {history['first_submission']}")
+                h3.write(f"**Last Submission:** {history['last_submission']}")
+                h4.write(f"**Last Analysis:** {history['last_analysis']}")
 
                 st.subheader("Firma digital")
 
@@ -583,6 +586,10 @@ SHA256: {sha256}
 Nombre de archivo: {file_name}
 Tipo de archivo: {file_type}
 Tamaño: {format_file_size(size)}
+Creation Time: {history['creation_time']}
+First Submission: {history['first_submission']}
+Last Submission: {history['last_submission']}
+Last Analysis: {history['last_analysis']}
 VirusTotal: score={vt_malicious}/{vt_total}, suspicious={vt_suspicious}
 Firmado: {'Sí' if signature['is_signed'] else 'No'}
 Firma válida: {'Sí' if signature['is_valid'] else 'No'}
