@@ -83,6 +83,19 @@ def total_engines_from_stats(stats: dict) -> int:
     return total
 
 
+def format_file_size(size):
+    if not isinstance(size, (int, float)):
+        return str(size)
+    units = ["B", "KB", "MB", "GB", "TB"]
+    size = float(size)
+    for unit in units:
+        if size < 1024 or unit == units[-1]:
+            if unit == "B":
+                return f"{int(size)} {unit}"
+            return f"{size:.2f} {unit}"
+        size /= 1024
+
+
 def get_verdict(vt_malicious: int = 0, vt_suspicious: int = 0, abuse_score: int = 0):
     if abuse_score >= 80 or vt_malicious >= 5:
         return "Malicioso", "high"
@@ -168,47 +181,96 @@ def render_abuse_score_bar(score: int, reports: int):
     st.progress(min(max(score, 0), 100))
 
 
+def normalize_verification_text(value) -> str:
+    if value is None:
+        return "N/A"
+    if isinstance(value, bool):
+        return "Valid signature" if value else "Invalid signature"
+    return str(value).strip()
+
+
 def extract_signature_info(vt_attributes: dict) -> dict:
     """
-    Usa el estado real de verificación de firma si existe.
-    Evita marcar como firmado un archivo solo porque tenga metadatos PE.
+    Extrae el estado real de la firma digital desde varios campos posibles
+    de VirusTotal y evita falsos positivos/negativos.
     """
     result = {
         "is_signed": False,
+        "is_valid": False,
         "signers": [],
         "verified": "N/A",
-        "publisher": "N/A"
+        "publisher": "N/A",
+        "date_signed": "N/A",
+        "product": "N/A",
+        "description": "N/A",
+        "file_version": "N/A",
+        "original_name": "N/A",
     }
-
-    signature_verification = (
-        vt_attributes.get("signature_verification")
-        or vt_attributes.get("signature verification")
-    )
-
-    if signature_verification:
-        verification_text = str(signature_verification).strip()
-        verification_lower = verification_text.lower()
-
-        result["verified"] = verification_text
-
-        if "not signed" in verification_lower or "unsigned" in verification_lower:
-            result["is_signed"] = False
-            return result
-
-        if "invalid" in verification_lower:
-            result["is_signed"] = True
-            return result
-
-        if "signed" in verification_lower or "valid" in verification_lower:
-            result["is_signed"] = True
-
-    if not result["is_signed"]:
-        return result
 
     signature_info = vt_attributes.get("signature_info", {})
     signatures = vt_attributes.get("signatures", [])
     pe_info = vt_attributes.get("pe_info", {})
+    version_info = vt_attributes.get("file_version_info", {})
 
+    # 1) Candidatos de texto de verificación, por prioridad
+    verification_candidates = [
+        vt_attributes.get("signature_verification"),
+        vt_attributes.get("signature verification"),
+        signature_info.get("signature_verification") if isinstance(signature_info, dict) else None,
+        signature_info.get("verification") if isinstance(signature_info, dict) else None,
+        signature_info.get("verified") if isinstance(signature_info, dict) else None,
+        signature_info.get("status") if isinstance(signature_info, dict) else None,
+        pe_info.get("signature_verification") if isinstance(pe_info, dict) else None,
+        pe_info.get("verified") if isinstance(pe_info, dict) else None,
+        pe_info.get("status") if isinstance(pe_info, dict) else None,
+    ]
+
+    if isinstance(signatures, list):
+        for sig in signatures:
+            if isinstance(sig, dict):
+                verification_candidates.extend([
+                    sig.get("signature_verification"),
+                    sig.get("verification"),
+                    sig.get("verified"),
+                    sig.get("status"),
+                ])
+
+    verified_text = "N/A"
+    for candidate in verification_candidates:
+        if candidate not in (None, "", [], {}):
+            verified_text = normalize_verification_text(candidate)
+            break
+
+    verified_lower = verified_text.lower()
+    result["verified"] = verified_text
+
+    # 2) Decidir si está firmado y si la firma parece válida
+    if any(x in verified_lower for x in ["not signed", "unsigned", "file is not signed"]):
+        result["is_signed"] = False
+        result["is_valid"] = False
+    elif any(x in verified_lower for x in ["signed file, valid signature", "valid signature"]):
+        result["is_signed"] = True
+        result["is_valid"] = True
+    elif "signed" in verified_lower:
+        result["is_signed"] = True
+        result["is_valid"] = "invalid" not in verified_lower
+    elif "invalid" in verified_lower:
+        result["is_signed"] = True
+        result["is_valid"] = False
+    else:
+        # Fallback: si hay evidencias fuertes de firma, marcar como firmado
+        has_signature_artifacts = any([
+            isinstance(signature_info, dict) and len(signature_info) > 0,
+            isinstance(signatures, list) and len(signatures) > 0,
+            isinstance(pe_info, dict) and any(
+                k in pe_info for k in ["signers", "signer_info", "signature_info", "date_signed"]
+            ),
+        ])
+        if has_signature_artifacts:
+            result["is_signed"] = True
+            result["is_valid"] = False
+
+    # 3) Extraer signers / publisher / metadata
     if isinstance(signature_info, dict) and signature_info:
         signers = signature_info.get("signers") or signature_info.get("signer") or []
         if isinstance(signers, str):
@@ -222,24 +284,31 @@ def extract_signature_info(vt_attributes: dict) -> dict:
             or signature_info.get("copyright")
             or "N/A"
         )
+        date_signed = signature_info.get("date_signed") or signature_info.get("signing_time") or "N/A"
 
-        result["signers"] = signers
-        result["publisher"] = publisher
-        return result
+        if signers:
+            result["signers"] = signers
+        if publisher != "N/A":
+            result["publisher"] = publisher
+        result["date_signed"] = date_signed
 
     if isinstance(signatures, list) and signatures:
-        first_sig = signatures[0] if isinstance(signatures[0], dict) else {}
-        signer = first_sig.get("signer") or first_sig.get("subject") or None
-        publisher = (
-            first_sig.get("publisher")
-            or first_sig.get("company")
-            or signer
-            or "N/A"
-        )
-
-        result["signers"] = [signer] if signer else []
-        result["publisher"] = publisher
-        return result
+        names = []
+        for sig in signatures:
+            if isinstance(sig, dict):
+                signer = sig.get("signer") or sig.get("subject") or sig.get("name")
+                if signer:
+                    names.append(str(signer))
+                if result["publisher"] == "N/A":
+                    publisher = sig.get("publisher") or sig.get("company")
+                    if publisher:
+                        result["publisher"] = str(publisher)
+                if result["date_signed"] == "N/A":
+                    ds = sig.get("date_signed") or sig.get("signing_time")
+                    if ds:
+                        result["date_signed"] = str(ds)
+        if names and not result["signers"]:
+            result["signers"] = names
 
     if isinstance(pe_info, dict) and pe_info:
         signer_info = (
@@ -254,23 +323,57 @@ def extract_signature_info(vt_attributes: dict) -> dict:
                 if isinstance(item, dict):
                     name = item.get("name") or item.get("signer") or item.get("subject")
                     if name:
-                        names.append(name)
+                        names.append(str(name))
                 elif isinstance(item, str):
                     names.append(item)
-            result["signers"] = names
+            if names and not result["signers"]:
+                result["signers"] = names
 
         elif isinstance(signer_info, dict):
             signer = signer_info.get("name") or signer_info.get("signer") or signer_info.get("subject")
-            if signer:
-                result["signers"] = [signer]
-            result["publisher"] = (
-                signer_info.get("publisher")
-                or signer_info.get("company")
-                or "N/A"
-            )
+            if signer and not result["signers"]:
+                result["signers"] = [str(signer)]
+            if result["publisher"] == "N/A":
+                result["publisher"] = (
+                    signer_info.get("publisher")
+                    or signer_info.get("company")
+                    or "N/A"
+                )
 
-        elif isinstance(signer_info, str):
+        elif isinstance(signer_info, str) and not result["signers"]:
             result["signers"] = [signer_info]
+
+        if result["date_signed"] == "N/A":
+            ds = pe_info.get("date_signed")
+            if ds:
+                result["date_signed"] = str(ds)
+
+    # 4) File version info
+    if not isinstance(version_info, dict):
+        version_info = {}
+
+    result["product"] = (
+        version_info.get("Product")
+        or version_info.get("product")
+        or "N/A"
+    )
+    result["description"] = (
+        version_info.get("Description")
+        or version_info.get("FileDescription")
+        or version_info.get("description")
+        or "N/A"
+    )
+    result["file_version"] = (
+        version_info.get("FileVersion")
+        or version_info.get("file_version")
+        or "N/A"
+    )
+    result["original_name"] = (
+        version_info.get("OriginalName")
+        or version_info.get("OriginalFilename")
+        or version_info.get("original_name")
+        or "N/A"
+    )
 
     return result
 
@@ -444,17 +547,15 @@ Conclusión: {verdict}
                 c1, c2, c3 = st.columns(3)
                 c1.write(f"**Nombre de archivo:** {file_name}")
                 c2.write(f"**Tipo de archivo:** {file_type}")
-                c3.write(f"**Tamaño:** {size}")
+                c3.write(f"**Tamaño:** {format_file_size(size)}")
 
                 st.subheader("Firma digital")
 
                 if signature["is_signed"]:
-                    verified_text = str(signature["verified"]).lower()
-
-                    if "invalid" in verified_text:
-                        st.error("El archivo está firmado, pero la firma parece inválida.")
+                    if signature["is_valid"]:
+                        st.success("El archivo está firmado digitalmente y la firma parece válida.")
                     else:
-                        st.success("El archivo está firmado digitalmente.")
+                        st.warning("El archivo está firmado digitalmente, pero la verificación no parece válida o no está clara.")
 
                     s1, s2, s3 = st.columns(3)
                     s1.write("**Firmado:** Sí")
@@ -463,6 +564,12 @@ Conclusión: {verdict}
 
                     if signature["signers"]:
                         st.write(f"**Signer(s):** {', '.join(signature['signers'])}")
+
+                    meta1, meta2, meta3, meta4 = st.columns(4)
+                    meta1.write(f"**Producto:** {signature['product']}")
+                    meta2.write(f"**Descripción:** {signature['description']}")
+                    meta3.write(f"**File Version:** {signature['file_version']}")
+                    meta4.write(f"**Date Signed:** {signature['date_signed']}")
                 else:
                     st.error("El archivo NO está firmado digitalmente.")
                     st.write(f"**Verificación:** {signature['verified']}")
@@ -475,12 +582,17 @@ Tipo: Hash
 SHA256: {sha256}
 Nombre de archivo: {file_name}
 Tipo de archivo: {file_type}
-Tamaño: {size}
+Tamaño: {format_file_size(size)}
 VirusTotal: score={vt_malicious}/{vt_total}, suspicious={vt_suspicious}
 Firmado: {'Sí' if signature['is_signed'] else 'No'}
+Firma válida: {'Sí' if signature['is_valid'] else 'No'}
 Verificación: {signature['verified']}
 Publisher: {signature['publisher']}
 Signers: {', '.join(signature['signers']) if signature['signers'] else 'N/A'}
+Producto: {signature['product']}
+Descripción: {signature['description']}
+Versión: {signature['file_version']}
+Fecha firma: {signature['date_signed']}
 Conclusión: {verdict}
 """
                 st.subheader("Texto para ticket")
