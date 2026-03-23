@@ -161,43 +161,60 @@ def render_vt_score_card(malicious: int, total: int):
 
 def render_abuse_score_bar(score: int, reports: int):
     st.subheader("AbuseIPDB Score")
-    st.write(f"Esta IP ha sido reportada **{reports}** veces. Confidence of Abuse: **{score}%**")
+    st.write(
+        f"Esta IP ha sido reportada **{reports}** veces. "
+        f"Confidence of Abuse: **{score}%**"
+    )
     st.progress(min(max(score, 0), 100))
 
 
 def extract_signature_info(vt_attributes: dict) -> dict:
     """
-    Intenta extraer información de firma digital de varios campos posibles
-    que pueden venir en la respuesta de VirusTotal para archivos.
+    Usa el estado real de verificación de firma si existe.
+    Evita marcar como firmado un archivo solo porque tenga metadatos PE.
     """
     result = {
         "is_signed": False,
         "signers": [],
         "verified": "N/A",
-        "publisher": "N/A",
-        "raw": {}
+        "publisher": "N/A"
     }
 
-    signature_info = vt_attributes.get("signature_info")
-    signatures = vt_attributes.get("signatures")
+    signature_verification = (
+        vt_attributes.get("signature_verification")
+        or vt_attributes.get("signature verification")
+    )
+
+    if signature_verification:
+        verification_text = str(signature_verification).strip()
+        verification_lower = verification_text.lower()
+
+        result["verified"] = verification_text
+
+        if "not signed" in verification_lower or "unsigned" in verification_lower:
+            result["is_signed"] = False
+            return result
+
+        if "invalid" in verification_lower:
+            result["is_signed"] = True
+            return result
+
+        if "signed" in verification_lower or "valid" in verification_lower:
+            result["is_signed"] = True
+
+    if not result["is_signed"]:
+        return result
+
+    signature_info = vt_attributes.get("signature_info", {})
+    signatures = vt_attributes.get("signatures", [])
     pe_info = vt_attributes.get("pe_info", {})
-    raw = {}
 
-    if isinstance(signature_info, dict):
-        raw["signature_info"] = signature_info
-
+    if isinstance(signature_info, dict) and signature_info:
         signers = signature_info.get("signers") or signature_info.get("signer") or []
         if isinstance(signers, str):
             signers = [signers]
         elif not isinstance(signers, list):
             signers = []
-
-        verified = (
-            signature_info.get("verified")
-            or signature_info.get("verification")
-            or signature_info.get("status")
-            or "N/A"
-        )
 
         publisher = (
             signature_info.get("publisher")
@@ -206,66 +223,54 @@ def extract_signature_info(vt_attributes: dict) -> dict:
             or "N/A"
         )
 
-        result["is_signed"] = True
         result["signers"] = signers
-        result["verified"] = verified
         result["publisher"] = publisher
-        result["raw"] = raw
         return result
 
-    if isinstance(signatures, list) and len(signatures) > 0:
-        raw["signatures"] = signatures
+    if isinstance(signatures, list) and signatures:
         first_sig = signatures[0] if isinstance(signatures[0], dict) else {}
-
-        signer = first_sig.get("signer") or first_sig.get("subject") or "N/A"
-        verified = (
-            first_sig.get("verified")
-            or first_sig.get("status")
-            or first_sig.get("verification")
-            or "N/A"
-        )
-
+        signer = first_sig.get("signer") or first_sig.get("subject") or None
         publisher = (
             first_sig.get("publisher")
             or first_sig.get("company")
             or signer
+            or "N/A"
         )
 
-        result["is_signed"] = True
-        result["signers"] = [signer] if signer != "N/A" else []
-        result["verified"] = verified
+        result["signers"] = [signer] if signer else []
         result["publisher"] = publisher
-        result["raw"] = raw
         return result
 
-    if isinstance(pe_info, dict):
-        raw["pe_info"] = pe_info
+    if isinstance(pe_info, dict) and pe_info:
+        signer_info = (
+            pe_info.get("signers")
+            or pe_info.get("signer_info")
+            or pe_info.get("signature_info")
+        )
 
-        signer_info = pe_info.get("signers") or pe_info.get("signer_info") or pe_info.get("signature_info")
-        if signer_info:
-            result["is_signed"] = True
+        if isinstance(signer_info, list):
+            names = []
+            for item in signer_info:
+                if isinstance(item, dict):
+                    name = item.get("name") or item.get("signer") or item.get("subject")
+                    if name:
+                        names.append(name)
+                elif isinstance(item, str):
+                    names.append(item)
+            result["signers"] = names
 
-            if isinstance(signer_info, list):
-                names = []
-                for item in signer_info:
-                    if isinstance(item, dict):
-                        name = item.get("name") or item.get("signer") or item.get("subject")
-                        if name:
-                            names.append(name)
-                    elif isinstance(item, str):
-                        names.append(item)
-                result["signers"] = names
-            elif isinstance(signer_info, dict):
-                signer = signer_info.get("name") or signer_info.get("signer") or signer_info.get("subject")
-                if signer:
-                    result["signers"] = [signer]
-                result["verified"] = signer_info.get("verified") or signer_info.get("status") or "N/A"
-                result["publisher"] = signer_info.get("publisher") or signer_info.get("company") or "N/A"
-            elif isinstance(signer_info, str):
-                result["signers"] = [signer_info]
+        elif isinstance(signer_info, dict):
+            signer = signer_info.get("name") or signer_info.get("signer") or signer_info.get("subject")
+            if signer:
+                result["signers"] = [signer]
+            result["publisher"] = (
+                signer_info.get("publisher")
+                or signer_info.get("company")
+                or "N/A"
+            )
 
-            result["raw"] = raw
-            return result
+        elif isinstance(signer_info, str):
+            result["signers"] = [signer_info]
 
     return result
 
@@ -442,17 +447,25 @@ Conclusión: {verdict}
                 c3.write(f"**Tamaño:** {size}")
 
                 st.subheader("Firma digital")
+
                 if signature["is_signed"]:
-                    st.success("El archivo parece estar firmado digitalmente.")
+                    verified_text = str(signature["verified"]).lower()
+
+                    if "invalid" in verified_text:
+                        st.error("El archivo está firmado, pero la firma parece inválida.")
+                    else:
+                        st.success("El archivo está firmado digitalmente.")
+
                     s1, s2, s3 = st.columns(3)
-                    s1.write(f"**Firmado:** Sí")
-                    s2.write(f"**Verificado:** {signature['verified']}")
+                    s1.write("**Firmado:** Sí")
+                    s2.write(f"**Verificación:** {signature['verified']}")
                     s3.write(f"**Publisher:** {signature['publisher']}")
 
                     if signature["signers"]:
                         st.write(f"**Signer(s):** {', '.join(signature['signers'])}")
                 else:
-                    st.warning("No se ha encontrado información de firma digital en VirusTotal.")
+                    st.error("El archivo NO está firmado digitalmente.")
+                    st.write(f"**Verificación:** {signature['verified']}")
 
                 st.subheader("Enlaces")
                 st.markdown(f"[Abrir en VirusTotal](https://www.virustotal.com/gui/file/{ioc})")
@@ -465,7 +478,7 @@ Tipo de archivo: {file_type}
 Tamaño: {size}
 VirusTotal: score={vt_malicious}/{vt_total}, suspicious={vt_suspicious}
 Firmado: {'Sí' if signature['is_signed'] else 'No'}
-Verificado: {signature['verified']}
+Verificación: {signature['verified']}
 Publisher: {signature['publisher']}
 Signers: {', '.join(signature['signers']) if signature['signers'] else 'N/A'}
 Conclusión: {verdict}
