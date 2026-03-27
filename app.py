@@ -480,8 +480,11 @@ if ioc:
             c3.write(f"**VT Reputation:** {reputation}")
 
             st.subheader("Enlaces")
-            st.markdown(f"[Abrir en VirusTotal](https://www.virustotal.com/gui/ip-address/{ioc})")
-            st.markdown(f"[Abrir en AbuseIPDB](https://www.abuseipdb.com/check/{ioc})")
+            vt_ip_link = f"https://www.virustotal.com/gui/ip-address/{ioc}"
+            abuse_ip_link = f"https://www.abuseipdb.com/check/{ioc}"
+
+            st.markdown(f"[{ioc} - VirusTotal]({vt_ip_link})")
+            st.markdown(f"[{ioc} - AbuseIPDB]({abuse_ip_link})")
 
             ticket_text = f"""IOC analizado: {ioc}
 Tipo: IP
@@ -489,6 +492,9 @@ VirusTotal: score={vt_malicious}/{vt_total}, suspicious={vt_suspicious}, reputat
 AbuseIPDB: abuseConfidenceScore={abuse_score}, totalReports={reports}
 País: {country_name} ({country_code})
 AS Owner: {as_owner}
+Enlaces:
+- {ioc} - VirusTotal: {vt_ip_link}
+- {ioc} - AbuseIPDB: {abuse_ip_link}
 Conclusión: {verdict}
 """
             st.subheader("Texto para ticket")
@@ -578,7 +584,8 @@ Conclusión: {verdict}
                     st.write(f"**Verificación:** {signature['verified']}")
 
                 st.subheader("Enlaces")
-                st.markdown(f"[Abrir en VirusTotal](https://www.virustotal.com/gui/file/{ioc})")
+                vt_hash_link = f"https://www.virustotal.com/gui/file/{ioc}"
+                st.markdown(f"[{ioc} - VirusTotal]({vt_hash_link})")
 
                 ticket_text = f"""IOC analizado: {ioc}
 Tipo: Hash
@@ -600,12 +607,12 @@ Producto: {signature['product']}
 Descripción: {signature['description']}
 Versión: {signature['file_version']}
 Fecha firma: {signature['date_signed']}
+Enlace:
+- {ioc} - VirusTotal: {vt_hash_link}
 Conclusión: {verdict}
 """
                 st.subheader("Texto para ticket")
                 st.code(ticket_text, language="text")
-            else:
-                show_api_error("VirusTotal", vt_response)
 
         elif is_url(ioc):
             ioc = normalize_url(ioc)
@@ -653,18 +660,19 @@ Conclusión: {verdict}
                     st.write(f"**Categorías:** {categories}")
 
                 st.subheader("Enlaces")
-                st.markdown(f"[Abrir en VirusTotal](https://www.virustotal.com/gui/url/{vt_url_id(ioc)})")
+                vt_url_link = f"https://www.virustotal.com/gui/url/{vt_url_id(ioc)}"
+                st.markdown(f"[{final_url} - VirusTotal]({vt_url_link})")
 
                 ticket_text = f"""IOC analizado: {ioc}
 Tipo: URL
 VirusTotal: score={vt_malicious}/{vt_total}, suspicious={vt_suspicious}
 Categorías: {categories if categories else 'N/A'}
+Enlace:
+- {final_url} - VirusTotal: {vt_url_link}
 Conclusión: {verdict}
 """
                 st.subheader("Texto para ticket")
                 st.code(ticket_text, language="text")
-            else:
-                show_api_error("VirusTotal", vt_response)
 
         else:
             st.warning("Tipo de IOC no reconocido. Introduce una IP, URL o hash válido.")
