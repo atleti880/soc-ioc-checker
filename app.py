@@ -381,6 +381,44 @@ def extract_history_info(vt_attributes: dict) -> dict:
     }
 
 
+def render_links_table(ioc_label: str, vt_link: str, abuse_link: str | None = None):
+    if abuse_link:
+        table_html = f"""
+        <table style="width:100%; border-collapse: collapse;">
+            <tr style="background-color:#1f2a44; color:white;">
+                <th style="padding:8px; border:1px solid #2e3b5e;">IOC</th>
+                <th style="padding:8px; border:1px solid #2e3b5e;">VirusTotal</th>
+                <th style="padding:8px; border:1px solid #2e3b5e;">AbuseIPDB</th>
+            </tr>
+            <tr>
+                <td style="padding:8px; border:1px solid #2e3b5e;">{ioc_label}</td>
+                <td style="padding:8px; border:1px solid #2e3b5e;">
+                    <a href="{vt_link}" target="_blank">🔗</a>
+                </td>
+                <td style="padding:8px; border:1px solid #2e3b5e;">
+                    <a href="{abuse_link}" target="_blank">🔗</a>
+                </td>
+            </tr>
+        </table>
+        """
+    else:
+        table_html = f"""
+        <table style="width:100%; border-collapse: collapse;">
+            <tr style="background-color:#1f2a44; color:white;">
+                <th style="padding:8px; border:1px solid #2e3b5e;">IOC</th>
+                <th style="padding:8px; border:1px solid #2e3b5e;">VirusTotal</th>
+            </tr>
+            <tr>
+                <td style="padding:8px; border:1px solid #2e3b5e;">{ioc_label}</td>
+                <td style="padding:8px; border:1px solid #2e3b5e;">
+                    <a href="{vt_link}" target="_blank">🔗</a>
+                </td>
+            </tr>
+        </table>
+        """
+    st.markdown(table_html, unsafe_allow_html=True)
+
+
 def vt_ip_lookup(ip: str) -> requests.Response:
     url = f"https://www.virustotal.com/api/v3/ip_addresses/{ip}"
     return requests.get(url, headers=VT_HEADERS, timeout=20)
@@ -482,9 +520,7 @@ if ioc:
             st.subheader("Enlaces")
             vt_ip_link = f"https://www.virustotal.com/gui/ip-address/{ioc}"
             abuse_ip_link = f"https://www.abuseipdb.com/check/{ioc}"
-
-            st.markdown(f"[{ioc} - VirusTotal]({vt_ip_link})")
-            st.markdown(f"[{ioc} - AbuseIPDB]({abuse_ip_link})")
+            render_links_table(ioc, vt_ip_link, abuse_ip_link)
 
             ticket_text = f"""IOC analizado: {ioc}
 Tipo: IP
@@ -585,7 +621,7 @@ Conclusión: {verdict}
 
                 st.subheader("Enlaces")
                 vt_hash_link = f"https://www.virustotal.com/gui/file/{ioc}"
-                st.markdown(f"[{ioc} - VirusTotal]({vt_hash_link})")
+                render_links_table(ioc, vt_hash_link)
 
                 ticket_text = f"""IOC analizado: {ioc}
 Tipo: Hash
@@ -661,7 +697,7 @@ Conclusión: {verdict}
 
                 st.subheader("Enlaces")
                 vt_url_link = f"https://www.virustotal.com/gui/url/{vt_url_id(ioc)}"
-                st.markdown(f"[{final_url} - VirusTotal]({vt_url_link})")
+                render_links_table(final_url, vt_url_link)
 
                 ticket_text = f"""IOC analizado: {ioc}
 Tipo: URL
