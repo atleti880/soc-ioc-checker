@@ -162,6 +162,12 @@ def build_vt_summary_link(ioc: str, ioc_type: str) -> str:
     return ""
 
 
+def build_abuse_summary_link(ioc: str, ioc_type: str) -> str:
+    if ioc_type == "IP":
+        return f"https://www.abuseipdb.com/check/{ioc}"
+    return ""
+
+
 # =========================
 # VEREDICTO / OBSERVACIONES
 # =========================
@@ -982,6 +988,7 @@ if process:
                     "Abuse Score": abuse_score,
                     "Reports": reports,
                     "VirusTotal": build_vt_summary_link(ioc, "IP"),
+                    "AbuseIPDB": build_abuse_summary_link(ioc, "IP"),
                 })
 
                 detailed_results.append({
@@ -1029,6 +1036,7 @@ if process:
                         "Abuse Score": "N/A",
                         "Reports": "N/A",
                         "VirusTotal": build_vt_summary_link(ioc, "Hash"),
+                        "AbuseIPDB": "",
                     })
                     detailed_results.append({
                         "ioc": ioc,
@@ -1069,6 +1077,7 @@ if process:
                     "Abuse Score": "N/A",
                     "Reports": "N/A",
                     "VirusTotal": build_vt_summary_link(ioc, "Hash"),
+                    "AbuseIPDB": "",
                 })
 
                 detailed_results.append({
@@ -1113,6 +1122,7 @@ if process:
                         "Abuse Score": "N/A",
                         "Reports": "N/A",
                         "VirusTotal": build_vt_summary_link(ioc, "URL"),
+                        "AbuseIPDB": "",
                     })
                     detailed_results.append({
                         "ioc": ioc,
@@ -1147,6 +1157,7 @@ if process:
                     "Abuse Score": "N/A",
                     "Reports": "N/A",
                     "VirusTotal": build_vt_summary_link(ioc, "URL"),
+                    "AbuseIPDB": "",
                 })
 
                 detailed_results.append({
@@ -1178,6 +1189,7 @@ if process:
                     "Abuse Score": "N/A",
                     "Reports": "N/A",
                     "VirusTotal": "",
+                    "AbuseIPDB": "",
                 })
                 detailed_results.append({
                     "ioc": ioc,
@@ -1234,6 +1246,11 @@ if process:
                 "VirusTotal",
                 width="medium",
                 display_text="Abrir VT"
+            ),
+            "AbuseIPDB": st.column_config.LinkColumn(
+                "AbuseIPDB",
+                width="medium",
+                display_text="Abrir AbuseIPDB"
             ),
         }
     )
