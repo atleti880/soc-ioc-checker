@@ -1,4 +1,5 @@
 import base64
+import html
 import re
 from datetime import datetime, timezone
 from urllib.parse import urlparse
@@ -6,6 +7,7 @@ from urllib.parse import urlparse
 import pycountry
 import requests
 import streamlit as st
+import streamlit.components.v1 as components
 
 VT_API = st.secrets["VT_API"]
 ABUSE_API = st.secrets["ABUSE_API"]
@@ -391,20 +393,67 @@ def format_categories(categories) -> str:
     return str(categories)
 
 
-def render_ticket_box(ticket_text: str, filename: str):
+def render_ticket_box(ticket_text: str, unique_key: str):
     st.subheader("Texto para ticket")
-    st.text_area(
-        "Contenido listo para copiar/pegar",
-        value=ticket_text,
-        height=320,
-        key=f"ticket_{filename}"
-    )
-    st.download_button(
-        "Descargar ticket .txt",
-        data=ticket_text,
-        file_name=filename,
-        mime="text/plain"
-    )
+
+    escaped_text = html.escape(ticket_text)
+    component_html = f"""
+    <div style="margin-top: 0.5rem; margin-bottom: 1rem;">
+        <textarea
+            id="ticket_box_{unique_key}"
+            readonly
+            style="
+                width: 100%;
+                height: 320px;
+                padding: 12px;
+                border-radius: 8px;
+                border: 1px solid #4a4a4a;
+                background: #0e1117;
+                color: #fafafa;
+                font-family: monospace;
+                font-size: 14px;
+                line-height: 1.5;
+                resize: vertical;
+                box-sizing: border-box;
+            "
+        >{escaped_text}</textarea>
+
+        <button
+            onclick="copyTicketText_{unique_key}()"
+            style="
+                margin-top: 10px;
+                background: #ff4b4b;
+                color: white;
+                border: none;
+                padding: 10px 16px;
+                border-radius: 8px;
+                cursor: pointer;
+                font-weight: 600;
+            "
+        >
+            Copiar al portapapeles
+        </button>
+
+        <span id="copy_msg_{unique_key}" style="margin-left: 12px; color: #7dd87d; font-weight: 600;"></span>
+    </div>
+
+    <script>
+    function copyTicketText_{unique_key}() {{
+        const textarea = document.getElementById("ticket_box_{unique_key}");
+        textarea.select();
+        textarea.setSelectionRange(0, 999999);
+
+        navigator.clipboard.writeText(textarea.value).then(function() {{
+            const msg = document.getElementById("copy_msg_{unique_key}");
+            msg.innerText = "Copiado";
+            setTimeout(() => {{
+                msg.innerText = "";
+            }}, 2000);
+        }});
+    }}
+    </script>
+    """
+    components.html(component_html, height=390)
 
 
 def build_ticket_text_ip(
@@ -655,7 +704,7 @@ if ioc:
                 abuse_link=abuse_ip_link,
                 verdict=verdict,
             )
-            render_ticket_box(ticket_text, f"ticket_ip_{ioc}.txt")
+            render_ticket_box(ticket_text, f"ip_{ioc.replace('.', '_')}")
 
         elif is_hash(ioc):
             st.info("Tipo detectado: Hash")
@@ -758,7 +807,7 @@ if ioc:
                     vt_link=vt_hash_link,
                     verdict=verdict,
                 )
-                render_ticket_box(ticket_text, f"ticket_hash_{ioc}.txt")
+                render_ticket_box(ticket_text, f"hash_{ioc[:12]}")
 
             else:
                 show_api_error("VirusTotal", vt_response)
@@ -822,7 +871,7 @@ if ioc:
                     vt_link=vt_url_link,
                     verdict=verdict,
                 )
-                render_ticket_box(ticket_text, "ticket_url.txt")
+                render_ticket_box(ticket_text, "url_ticket")
 
             else:
                 show_api_error("VirusTotal", vt_response)
