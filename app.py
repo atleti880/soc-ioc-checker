@@ -1,9 +1,12 @@
 import base64
 import html
+import ipaddress
 import re
+import socket
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
+import pandas as pd
 import pycountry
 import requests
 import streamlit as st
@@ -20,16 +23,23 @@ st.set_page_config(page_title="SOC IOC Checker", page_icon="🛡️", layout="wi
 st.title("SOC IOC Checker")
 st.caption("Consulta IP / URL / Hash en VirusTotal y AbuseIPDB")
 
-ioc = st.text_input("Introduce IP / URL / Hash")
+if "ioc_input" not in st.session_state:
+    st.session_state["ioc_input"] = ""
 
 
+# =========================
+# UTILIDADES BÁSICAS
+# =========================
 def is_ip(value: str) -> bool:
-    pattern = r"^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$"
-    return re.fullmatch(pattern, value) is not None
+    try:
+        ipaddress.ip_address(value.strip())
+        return True
+    except Exception:
+        return False
 
 
 def is_hash(value: str) -> bool:
-    return re.fullmatch(r"([A-Fa-f0-9]{32}|[A-Fa-f0-9]{40}|[A-Fa-f0-9]{64})", value) is not None
+    return re.fullmatch(r"([A-Fa-f0-9]{32}|[A-Fa-f0-9]{40}|[A-Fa-f0-9]{64})", value.strip()) is not None
 
 
 def normalize_url(value: str) -> str:
@@ -42,9 +52,26 @@ def normalize_url(value: str) -> str:
 def is_url(value: str) -> bool:
     try:
         parsed = urlparse(normalize_url(value))
-        return bool(parsed.netloc)
+        host = (parsed.hostname or "").strip().lower()
+        if not host:
+            return False
+        if is_ip(host):
+            return True
+        domain_regex = r"^(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,63}$"
+        return re.fullmatch(domain_regex, host) is not None
     except Exception:
         return False
+
+
+def detect_ioc_type(value: str) -> str:
+    value = value.strip()
+    if is_ip(value):
+        return "IP"
+    if is_hash(value):
+        return "Hash"
+    if is_url(value):
+        return "URL"
+    return "Desconocido"
 
 
 def safe_json(response: requests.Response) -> dict:
@@ -71,11 +98,7 @@ def vt_url_id(url: str) -> str:
 def total_engines_from_stats(stats: dict) -> int:
     if not isinstance(stats, dict):
         return 0
-    total = 0
-    for value in stats.values():
-        if isinstance(value, int):
-            total += value
-    return total
+    return sum(v for v in stats.values() if isinstance(v, int))
 
 
 def format_file_size(size):
@@ -101,6 +124,29 @@ def format_unix_timestamp(ts):
         return str(ts)
 
 
+def format_categories(categories) -> str:
+    if not categories:
+        return "N/A"
+    if isinstance(categories, dict):
+        return ", ".join(f"{k}: {v}" for k, v in categories.items())
+    if isinstance(categories, list):
+        return ", ".join(str(x) for x in categories)
+    return str(categories)
+
+
+def normalize_reputation(value):
+    if value in (None, "", "N/A"):
+        return "N/A"
+    return value
+
+
+def escape_key(value: str) -> str:
+    return re.sub(r"[^a-zA-Z0-9_]", "_", value)
+
+
+# =========================
+# VEREDICTO / OBSERVACIONES
+# =========================
 def get_verdict(vt_malicious: int = 0, vt_suspicious: int = 0, abuse_score: int = 0):
     if abuse_score >= 80 or vt_malicious >= 5:
         return "Malicioso", "high"
@@ -109,26 +155,97 @@ def get_verdict(vt_malicious: int = 0, vt_suspicious: int = 0, abuse_score: int 
     return "Bajo riesgo", "low"
 
 
-def show_verdict(verdict: str, severity: str):
+def get_verdict_icon(severity: str) -> str:
     if severity == "high":
-        st.error(f"Veredicto: {verdict}")
+        return "🔴"
+    if severity == "medium":
+        return "🟠"
+    return "🟢"
+
+
+def get_verdict_hint(severity: str) -> str:
+    if severity == "high":
+        return "Requiere revisión inmediata."
+    if severity == "medium":
+        return "Conviene validar el contexto y revisar eventos asociados."
+    return "Sin indicadores claros en las fuentes consultadas."
+
+
+def show_verdict_banner(verdict: str, severity: str):
+    icon = get_verdict_icon(severity)
+    hint = get_verdict_hint(severity)
+    if severity == "high":
+        st.error(f"{icon} Veredicto: {verdict}")
     elif severity == "medium":
-        st.warning(f"Veredicto: {verdict}")
+        st.warning(f"{icon} Veredicto: {verdict}")
     else:
-        st.success(f"Veredicto: {verdict}")
+        st.success(f"{icon} Veredicto: {verdict}")
+    st.caption(hint)
 
 
-def show_api_error(source: str, response: requests.Response):
-    data = safe_json(response)
-    message = (
-        data.get("error", {}).get("message")
-        or data.get("errors")
-        or response.text[:300]
-        or "Error desconocido"
-    )
-    st.error(f"{source} devolvió error {response.status_code}: {message}")
+def get_observations_ip(vt_malicious, vt_suspicious, abuse_score, reports, as_owner, hostname):
+    obs = []
+    if vt_malicious > 0:
+        obs.append(f"La IP presenta {vt_malicious} detecciones maliciosas en VirusTotal.")
+    elif vt_suspicious > 0:
+        obs.append(f"La IP no tiene detecciones maliciosas, pero sí {vt_suspicious} detecciones sospechosas en VirusTotal.")
+    else:
+        obs.append("La IP no presenta detecciones claras en VirusTotal en esta consulta.")
+
+    if abuse_score >= 30:
+        obs.append(f"AbuseIPDB muestra un confidence score de {abuse_score}% con {reports} reportes.")
+    elif reports > 0:
+        obs.append(f"La IP tiene {reports} reportes en AbuseIPDB, aunque con score moderado o bajo.")
+    else:
+        obs.append("No se observan reportes relevantes en AbuseIPDB.")
+
+    if as_owner != "N/A":
+        obs.append(f"El AS Owner reportado es {as_owner}.")
+    if hostname != "N/A":
+        obs.append(f"El reverse DNS resuelve a {hostname}.")
+
+    return " ".join(obs)
 
 
+def get_observations_hash(vt_malicious, vt_suspicious, signature):
+    obs = []
+    if vt_malicious > 0:
+        obs.append(f"El hash presenta {vt_malicious} detecciones maliciosas en VirusTotal.")
+    elif vt_suspicious > 0:
+        obs.append(f"El hash presenta {vt_suspicious} detecciones sospechosas, sin detecciones maliciosas directas.")
+    else:
+        obs.append("El hash no presenta detecciones claras en VirusTotal en esta consulta.")
+
+    if signature["is_signed"] and signature["is_valid"]:
+        obs.append("El archivo está firmado digitalmente y la firma parece válida.")
+    elif signature["is_signed"]:
+        obs.append("El archivo está firmado digitalmente, pero la validez de la firma no es concluyente.")
+    else:
+        obs.append("El archivo no aparece firmado digitalmente.")
+
+    return " ".join(obs)
+
+
+def get_observations_url(vt_malicious, vt_suspicious, categories):
+    obs = []
+    if vt_malicious > 0:
+        obs.append(f"La URL presenta {vt_malicious} detecciones maliciosas en VirusTotal.")
+    elif vt_suspicious > 0:
+        obs.append(f"La URL presenta {vt_suspicious} detecciones sospechosas en VirusTotal.")
+    else:
+        obs.append("La URL no presenta detecciones claras en VirusTotal en esta consulta.")
+
+    if categories:
+        obs.append(f"VirusTotal devuelve categorías asociadas: {format_categories(categories)}.")
+    else:
+        obs.append("No se han devuelto categorías adicionales para la URL.")
+
+    return " ".join(obs)
+
+
+# =========================
+# RENDER VISUAL
+# =========================
 def render_vt_score_card(malicious: int, total: int):
     percent = 0 if total == 0 else round((malicious / total) * 100)
     card_html = f"""
@@ -186,6 +303,115 @@ def render_abuse_score_bar(score: int, reports: int):
     st.progress(min(max(score, 0), 100))
 
 
+def render_severity_badge(label: str, value, severity: str):
+    colors = {
+        "high": ("#ffdddd", "#8b0000"),
+        "medium": ("#fff4d6", "#8a5a00"),
+        "low": ("#ddffea", "#0a6b33"),
+    }
+    bg, fg = colors[severity]
+    st.markdown(
+        f"""
+        <div style="
+            background:{bg};
+            color:{fg};
+            border-radius:10px;
+            padding:10px 12px;
+            margin-bottom:8px;
+            font-weight:600;
+        ">
+            {label}: {value}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+def get_metric_severity_for_vt(vt_malicious: int) -> str:
+    if vt_malicious >= 5:
+        return "high"
+    if vt_malicious >= 1:
+        return "medium"
+    return "low"
+
+
+def get_metric_severity_for_abuse(score: int) -> str:
+    if score >= 80:
+        return "high"
+    if score >= 30:
+        return "medium"
+    return "low"
+
+
+# =========================
+# PORTAPAPELES
+# =========================
+def render_copy_box(title: str, text: str, unique_key: str, height: int = 320):
+    st.subheader(title)
+
+    escaped_text = html.escape(text)
+    component_html = f"""
+    <div style="margin-top: 0.5rem; margin-bottom: 1rem;">
+        <textarea
+            id="copy_box_{unique_key}"
+            readonly
+            style="
+                width: 100%;
+                height: {height}px;
+                padding: 12px;
+                border-radius: 8px;
+                border: 1px solid #4a4a4a;
+                background: #0e1117;
+                color: #fafafa;
+                font-family: monospace;
+                font-size: 14px;
+                line-height: 1.5;
+                resize: vertical;
+                box-sizing: border-box;
+            "
+        >{escaped_text}</textarea>
+
+        <button
+            onclick="copyText_{unique_key}()"
+            style="
+                margin-top: 10px;
+                background: #ff4b4b;
+                color: white;
+                border: none;
+                padding: 10px 16px;
+                border-radius: 8px;
+                cursor: pointer;
+                font-weight: 600;
+            "
+        >
+            Copiar al portapapeles
+        </button>
+
+        <span id="copy_msg_{unique_key}" style="margin-left: 12px; color: #7dd87d; font-weight: 600;"></span>
+    </div>
+
+    <script>
+    function copyText_{unique_key}() {{
+        const textarea = document.getElementById("copy_box_{unique_key}");
+        textarea.select();
+        textarea.setSelectionRange(0, 999999);
+
+        navigator.clipboard.writeText(textarea.value).then(function() {{
+            const msg = document.getElementById("copy_msg_{unique_key}");
+            msg.innerText = "Copiado ✅";
+            setTimeout(() => {{
+                msg.innerText = "";
+            }}, 2000);
+        }});
+    }}
+    </script>
+    """
+    components.html(component_html, height=height + 80)
+
+
+# =========================
+# FIRMA DIGITAL / HISTORIAL
+# =========================
 def normalize_verification_text(value) -> str:
     if value is None:
         return "N/A"
@@ -348,22 +574,14 @@ def extract_signature_info(vt_attributes: dict) -> dict:
     if not isinstance(version_info, dict):
         version_info = {}
 
-    result["product"] = (
-        version_info.get("Product")
-        or version_info.get("product")
-        or "N/A"
-    )
+    result["product"] = version_info.get("Product") or version_info.get("product") or "N/A"
     result["description"] = (
         version_info.get("Description")
         or version_info.get("FileDescription")
         or version_info.get("description")
         or "N/A"
     )
-    result["file_version"] = (
-        version_info.get("FileVersion")
-        or version_info.get("file_version")
-        or "N/A"
-    )
+    result["file_version"] = version_info.get("FileVersion") or version_info.get("file_version") or "N/A"
     result["original_name"] = (
         version_info.get("OriginalName")
         or version_info.get("OriginalFilename")
@@ -376,86 +594,114 @@ def extract_signature_info(vt_attributes: dict) -> dict:
 
 def extract_history_info(vt_attributes: dict) -> dict:
     return {
-        "creation_time": format_unix_timestamp(vt_attributes.get("creation_date")),
-        "first_submission": format_unix_timestamp(vt_attributes.get("first_submission_date")),
-        "last_submission": format_unix_timestamp(vt_attributes.get("last_submission_date")),
-        "last_analysis": format_unix_timestamp(vt_attributes.get("last_analysis_date")),
+        "fecha_creacion": format_unix_timestamp(vt_attributes.get("creation_date")),
+        "primera_subida_vt": format_unix_timestamp(vt_attributes.get("first_submission_date")),
+        "ultima_subida_vt": format_unix_timestamp(vt_attributes.get("last_submission_date")),
+        "ultimo_analisis": format_unix_timestamp(vt_attributes.get("last_analysis_date")),
     }
 
 
-def format_categories(categories) -> str:
-    if not categories:
+# =========================
+# RED / HOSTNAME
+# =========================
+@st.cache_data(ttl=3600, show_spinner=False)
+def reverse_dns_lookup(ip: str) -> str:
+    try:
+        hostname, _, _ = socket.gethostbyaddr(ip)
+        return hostname
+    except Exception:
         return "N/A"
-    if isinstance(categories, dict):
-        return ", ".join(f"{k}: {v}" for k, v in categories.items())
-    if isinstance(categories, list):
-        return ", ".join(str(x) for x in categories)
-    return str(categories)
 
 
-def render_ticket_box(ticket_text: str, unique_key: str):
-    st.subheader("Texto para ticket")
+# =========================
+# API / ERRORES
+# =========================
+def parse_api_error(source: str, status_code: int, data: dict, fallback_text: str = "") -> str:
+    api_message = (
+        data.get("error", {}).get("message")
+        or data.get("errors")
+        or fallback_text[:300]
+        or "Error desconocido"
+    )
 
-    escaped_text = html.escape(ticket_text)
-    component_html = f"""
-    <div style="margin-top: 0.5rem; margin-bottom: 1rem;">
-        <textarea
-            id="ticket_box_{unique_key}"
-            readonly
-            style="
-                width: 100%;
-                height: 320px;
-                padding: 12px;
-                border-radius: 8px;
-                border: 1px solid #4a4a4a;
-                background: #0e1117;
-                color: #fafafa;
-                font-family: monospace;
-                font-size: 14px;
-                line-height: 1.5;
-                resize: vertical;
-                box-sizing: border-box;
-            "
-        >{escaped_text}</textarea>
-
-        <button
-            onclick="copyTicketText_{unique_key}()"
-            style="
-                margin-top: 10px;
-                background: #ff4b4b;
-                color: white;
-                border: none;
-                padding: 10px 16px;
-                border-radius: 8px;
-                cursor: pointer;
-                font-weight: 600;
-            "
-        >
-            Copiar al portapapeles
-        </button>
-
-        <span id="copy_msg_{unique_key}" style="margin-left: 12px; color: #7dd87d; font-weight: 600;"></span>
-    </div>
-
-    <script>
-    function copyTicketText_{unique_key}() {{
-        const textarea = document.getElementById("ticket_box_{unique_key}");
-        textarea.select();
-        textarea.setSelectionRange(0, 999999);
-
-        navigator.clipboard.writeText(textarea.value).then(function() {{
-            const msg = document.getElementById("copy_msg_{unique_key}");
-            msg.innerText = "Copiado";
-            setTimeout(() => {{
-                msg.innerText = "";
-            }}, 2000);
-        }});
-    }}
-    </script>
-    """
-    components.html(component_html, height=390)
+    if status_code == 401:
+        return f"{source}: API key inválida o sin permisos."
+    if status_code == 403:
+        return f"{source}: acceso denegado."
+    if status_code == 404:
+        return f"{source}: IOC no encontrado."
+    if status_code == 429:
+        return f"{source}: límite de peticiones excedido."
+    if 500 <= status_code <= 599:
+        return f"{source}: error del servicio ({status_code})."
+    return f"{source}: error {status_code} - {api_message}"
 
 
+@st.cache_data(ttl=300, show_spinner=False)
+def vt_ip_lookup(ip: str) -> dict:
+    url = f"https://www.virustotal.com/api/v3/ip_addresses/{ip}"
+    try:
+        response = requests.get(url, headers=VT_HEADERS, timeout=20)
+        return {
+            "ok": response.status_code == 200,
+            "status_code": response.status_code,
+            "json": safe_json(response),
+            "text": response.text[:500],
+        }
+    except requests.RequestException as e:
+        return {"ok": False, "status_code": -1, "json": {}, "text": str(e)}
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def vt_hash_lookup(hash_value: str) -> dict:
+    url = f"https://www.virustotal.com/api/v3/files/{hash_value}"
+    try:
+        response = requests.get(url, headers=VT_HEADERS, timeout=20)
+        return {
+            "ok": response.status_code == 200,
+            "status_code": response.status_code,
+            "json": safe_json(response),
+            "text": response.text[:500],
+        }
+    except requests.RequestException as e:
+        return {"ok": False, "status_code": -1, "json": {}, "text": str(e)}
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def vt_url_lookup(url_value: str) -> dict:
+    url_id = vt_url_id(url_value)
+    url = f"https://www.virustotal.com/api/v3/urls/{url_id}"
+    try:
+        response = requests.get(url, headers=VT_HEADERS, timeout=20)
+        return {
+            "ok": response.status_code == 200,
+            "status_code": response.status_code,
+            "json": safe_json(response),
+            "text": response.text[:500],
+        }
+    except requests.RequestException as e:
+        return {"ok": False, "status_code": -1, "json": {}, "text": str(e)}
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def abuse_lookup(ip: str) -> dict:
+    url = "https://api.abuseipdb.com/api/v2/check"
+    params = {"ipAddress": ip, "maxAgeInDays": 90}
+    try:
+        response = requests.get(url, headers=ABUSE_HEADERS, params=params, timeout=20)
+        return {
+            "ok": response.status_code == 200,
+            "status_code": response.status_code,
+            "json": safe_json(response),
+            "text": response.text[:500],
+        }
+    except requests.RequestException as e:
+        return {"ok": False, "status_code": -1, "json": {}, "text": str(e)}
+
+
+# =========================
+# TEXTO PARA TICKET
+# =========================
 def build_ticket_text_ip(
     ioc,
     vt_malicious,
@@ -467,33 +713,41 @@ def build_ticket_text_ip(
     country_name,
     country_code,
     as_owner,
+    asn,
+    network,
+    hostname,
     vt_link,
     abuse_link,
-    verdict
+    verdict,
+    observations,
 ):
     analysis_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
-    return f"""[IOC CHECK - IP]
-
-Fecha de análisis: {analysis_time}
-IOC analizado: {ioc}
+    return f"""IOC: {ioc}
 Tipo: IP
-
-[RESUMEN]
+Fecha de análisis: {analysis_time}
 Resultado: {verdict}
-VirusTotal: {vt_malicious}/{vt_total} motores la clasifican como maliciosa
-Detecciones sospechosas en VT: {vt_suspicious}
-VT Reputation: {reputation}
-AbuseIPDB Confidence of Abuse: {abuse_score}%
-Reportes en AbuseIPDB: {reports}
 
-[CONTEXTO]
-País: {country_name} ({country_code})
-AS Owner: {as_owner}
+Resumen:
+- VT: {vt_malicious}/{vt_total}
+- VT suspicious: {vt_suspicious}
+- VT reputation: {reputation}
+- AbuseIPDB: {abuse_score}%
+- Reports: {reports}
 
-[ENLACES]
-{ioc} - VirusTotal: {vt_link}
-{ioc} - AbuseIPDB: {abuse_link}
+Contexto:
+- País: {country_name} ({country_code})
+- AS Owner: {as_owner}
+- ASN: {asn}
+- Network: {network}
+- Reverse DNS: {hostname}
+
+Observaciones:
+- {observations}
+
+Enlaces:
+- {ioc} - VirusTotal: {vt_link}
+- {ioc} - AbuseIPDB: {abuse_link}
 """
 
 
@@ -504,51 +758,53 @@ def build_ticket_text_hash(
     file_type,
     size,
     history,
+    signature,
     vt_malicious,
     vt_total,
     vt_suspicious,
-    signature,
     vt_link,
-    verdict
+    verdict,
+    observations,
 ):
     analysis_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
-    return f"""[IOC CHECK - HASH]
-
-Fecha de análisis: {analysis_time}
-IOC analizado: {ioc}
+    return f"""IOC: {ioc}
 Tipo: Hash
-
-[RESUMEN]
+Fecha de análisis: {analysis_time}
 Resultado: {verdict}
-VirusTotal: {vt_malicious}/{vt_total} motores lo clasifican como malicioso
-Detecciones sospechosas en VT: {vt_suspicious}
 
-[DETALLES DEL ARCHIVO]
-SHA256: {sha256}
-Nombre de archivo: {file_name}
-Tipo de archivo: {file_type}
-Tamaño: {format_file_size(size)}
+Resumen:
+- VT: {vt_malicious}/{vt_total}
+- VT suspicious: {vt_suspicious}
 
-[HISTORIAL]
-Creation Time: {history['creation_time']}
-First Submission: {history['first_submission']}
-Last Submission: {history['last_submission']}
-Last Analysis: {history['last_analysis']}
+Detalles:
+- SHA256: {sha256}
+- Nombre de archivo: {file_name}
+- Tipo de archivo: {file_type}
+- Tamaño: {format_file_size(size)}
 
-[FIRMA DIGITAL]
-Firmado: {'Sí' if signature['is_signed'] else 'No'}
-Firma válida: {'Sí' if signature['is_valid'] else 'No'}
-Verificación: {signature['verified']}
-Publisher: {signature['publisher']}
-Signers: {', '.join(signature['signers']) if signature['signers'] else 'N/A'}
-Producto: {signature['product']}
-Descripción: {signature['description']}
-Versión: {signature['file_version']}
-Fecha firma: {signature['date_signed']}
+Historial:
+- Fecha de creación: {history['fecha_creacion']}
+- Primera subida a VT: {history['primera_subida_vt']}
+- Última subida a VT: {history['ultima_subida_vt']}
+- Último análisis: {history['ultimo_analisis']}
 
-[ENLACES]
-{ioc} - VirusTotal: {vt_link}
+Firma digital:
+- Firmado: {'Sí' if signature['is_signed'] else 'No'}
+- Firma válida: {'Sí' if signature['is_valid'] else 'No'}
+- Verificación: {signature['verified']}
+- Publisher: {signature['publisher']}
+- Signers: {', '.join(signature['signers']) if signature['signers'] else 'N/A'}
+- Producto: {signature['product']}
+- Descripción: {signature['description']}
+- Versión: {signature['file_version']}
+- Fecha firma: {signature['date_signed']}
+
+Observaciones:
+- {observations}
+
+Enlaces:
+- {ioc} - VirusTotal: {vt_link}
 """
 
 
@@ -560,321 +816,471 @@ def build_ticket_text_url(
     vt_suspicious,
     categories,
     vt_link,
-    verdict
+    verdict,
+    observations,
 ):
     analysis_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
-    return f"""[IOC CHECK - URL]
-
-Fecha de análisis: {analysis_time}
-IOC analizado: {ioc}
+    return f"""IOC: {ioc}
 Tipo: URL
-
-[RESUMEN]
+Fecha de análisis: {analysis_time}
 Resultado: {verdict}
-VirusTotal: {vt_malicious}/{vt_total} motores la clasifican como maliciosa
-Detecciones sospechosas en VT: {vt_suspicious}
 
-[CONTEXTO]
-URL final: {final_url}
-Categorías: {format_categories(categories)}
+Resumen:
+- VT: {vt_malicious}/{vt_total}
+- VT suspicious: {vt_suspicious}
 
-[ENLACES]
-{final_url} - VirusTotal: {vt_link}
+Contexto:
+- URL final: {final_url}
+- Categorías: {format_categories(categories)}
+
+Observaciones:
+- {observations}
+
+Enlaces:
+- {final_url} - VirusTotal: {vt_link}
 """
 
 
-def vt_ip_lookup(ip: str) -> requests.Response:
-    url = f"https://www.virustotal.com/api/v3/ip_addresses/{ip}"
-    return requests.get(url, headers=VT_HEADERS, timeout=20)
+# =========================
+# INPUT / BOTONES
+# =========================
+col_input, col_actions = st.columns([6, 1])
+with col_input:
+    raw_iocs = st.text_area(
+        "Introduce uno o varios IOC(s), uno por línea",
+        key="ioc_input",
+        height=140,
+        placeholder="Ejemplo:\n8.8.8.8\nexample.com\n44d88612fea8a8f36de82e1278abb02f"
+    )
+with col_actions:
+    st.write("")
+    st.write("")
+    if st.button("Limpiar", use_container_width=True):
+        st.session_state["ioc_input"] = ""
+        st.rerun()
 
+process = st.button("Analizar IOC(s)", type="primary", use_container_width=True)
 
-def vt_hash_lookup(hash_value: str) -> requests.Response:
-    url = f"https://www.virustotal.com/api/v3/files/{hash_value}"
-    return requests.get(url, headers=VT_HEADERS, timeout=20)
+# =========================
+# PROCESADO PRINCIPAL
+# =========================
+if process:
+    raw_list = [x.strip() for x in raw_iocs.splitlines() if x.strip()]
 
+    # quitar duplicados preservando orden
+    seen = set()
+    iocs = []
+    for item in raw_list:
+        if item not in seen:
+            seen.add(item)
+            iocs.append(item)
 
-def vt_url_lookup(url_value: str) -> requests.Response:
-    url_id = vt_url_id(url_value)
-    url = f"https://www.virustotal.com/api/v3/urls/{url_id}"
-    return requests.get(url, headers=VT_HEADERS, timeout=20)
+    if not iocs:
+        st.warning("Introduce al menos un IOC válido.")
+        st.stop()
 
-
-def abuse_lookup(ip: str) -> requests.Response:
-    url = "https://api.abuseipdb.com/api/v2/check"
-    params = {"ipAddress": ip, "maxAgeInDays": 90}
-    return requests.get(url, headers=ABUSE_HEADERS, params=params, timeout=20)
-
-
-if ioc:
-    ioc = ioc.strip()
+    summary_rows = []
 
     with st.spinner("Consultando fuentes de inteligencia..."):
+        for ioc in iocs:
+            ioc_type = detect_ioc_type(ioc)
 
-        if is_ip(ioc):
-            st.info("Tipo detectado: IP")
+            with st.container():
+                st.markdown("---")
+                st.subheader(f"IOC analizado: {ioc}")
 
-            try:
-                vt_response = vt_ip_lookup(ioc)
-                abuse_response = abuse_lookup(ioc)
-            except requests.RequestException as e:
-                st.error(f"Error de red al consultar APIs: {e}")
-                st.stop()
+                if ioc_type == "IP":
+                    st.info("Tipo detectado: IP")
 
-            vt_malicious = 0
-            vt_suspicious = 0
-            vt_total = 0
-            country_code = "N/A"
-            as_owner = "N/A"
-            reputation = "N/A"
-            abuse_score = 0
-            reports = 0
+                    vt_response = vt_ip_lookup(ioc)
+                    abuse_response = abuse_lookup(ioc)
 
-            if vt_response.status_code == 200:
-                vt = safe_json(vt_response)
-                attr = vt.get("data", {}).get("attributes", {})
-                stats = attr.get("last_analysis_stats", {})
-                vt_malicious = stats.get("malicious", 0)
-                vt_suspicious = stats.get("suspicious", 0)
-                vt_total = total_engines_from_stats(stats)
-                country_code = attr.get("country", "N/A")
-                as_owner = attr.get("as_owner", "N/A")
-                reputation = attr.get("reputation", "N/A")
-            else:
-                show_api_error("VirusTotal", vt_response)
+                    vt_malicious = 0
+                    vt_suspicious = 0
+                    vt_total = 0
+                    country_code = "N/A"
+                    as_owner = "N/A"
+                    asn = "N/A"
+                    network = "N/A"
+                    reputation = "N/A"
+                    abuse_score = 0
+                    reports = 0
 
-            if abuse_response.status_code == 200:
-                abuse = safe_json(abuse_response)
-                data = abuse.get("data", {})
-                abuse_score = data.get("abuseConfidenceScore", 0)
-                reports = data.get("totalReports", 0)
-            else:
-                show_api_error("AbuseIPDB", abuse_response)
+                    vt_error = None
+                    abuse_error = None
 
-            verdict, severity = get_verdict(vt_malicious, vt_suspicious, abuse_score)
-            show_verdict(verdict, severity)
-
-            st.subheader("Resumen")
-            st.write(
-                f"La IP **{ioc}** presenta **{vt_malicious}/{vt_total if vt_total else 0}** "
-                f"en VirusTotal, **{vt_suspicious}** detecciones sospechosas y "
-                f"**abuse score {abuse_score}** con **{reports} reportes** en AbuseIPDB."
-            )
-
-            score_col, metrics_col = st.columns([1, 3])
-
-            with score_col:
-                render_vt_score_card(vt_malicious, vt_total)
-
-            with metrics_col:
-                m1, m2, m3, m4 = st.columns(4)
-                m1.metric("VT Malicious", vt_malicious)
-                m2.metric("VT Suspicious", vt_suspicious)
-                m3.metric("Abuse Score", abuse_score)
-                m4.metric("Reports", reports)
-
-            render_abuse_score_bar(abuse_score, reports)
-
-            st.subheader("Contexto")
-            country_name = country_name_from_code(country_code)
-            c1, c2, c3 = st.columns(3)
-            c1.write(f"**País:** {country_name} ({country_code})")
-            c2.write(f"**AS Owner:** {as_owner}")
-            c3.write(f"**VT Reputation:** {reputation}")
-
-            st.subheader("Enlaces")
-            vt_ip_link = f"https://www.virustotal.com/gui/ip-address/{ioc}"
-            abuse_ip_link = f"https://www.abuseipdb.com/check/{ioc}"
-
-            st.markdown(f"[{ioc} - VirusTotal]({vt_ip_link})")
-            st.markdown(f"[{ioc} - AbuseIPDB]({abuse_ip_link})")
-
-            ticket_text = build_ticket_text_ip(
-                ioc=ioc,
-                vt_malicious=vt_malicious,
-                vt_total=vt_total,
-                vt_suspicious=vt_suspicious,
-                reputation=reputation,
-                abuse_score=abuse_score,
-                reports=reports,
-                country_name=country_name,
-                country_code=country_code,
-                as_owner=as_owner,
-                vt_link=vt_ip_link,
-                abuse_link=abuse_ip_link,
-                verdict=verdict,
-            )
-            render_ticket_box(ticket_text, f"ip_{ioc.replace('.', '_')}")
-
-        elif is_hash(ioc):
-            st.info("Tipo detectado: Hash")
-
-            try:
-                vt_response = vt_hash_lookup(ioc)
-            except requests.RequestException as e:
-                st.error(f"Error de red al consultar VirusTotal: {e}")
-                st.stop()
-
-            if vt_response.status_code == 200:
-                vt = safe_json(vt_response)
-                attr = vt.get("data", {}).get("attributes", {})
-                stats = attr.get("last_analysis_stats", {})
-
-                vt_malicious = stats.get("malicious", 0)
-                vt_suspicious = stats.get("suspicious", 0)
-                vt_total = total_engines_from_stats(stats)
-
-                file_name = attr.get("meaningful_name", "N/A")
-                file_type = attr.get("type_description", "N/A")
-                size = attr.get("size", "N/A")
-                sha256 = attr.get("sha256", "N/A")
-
-                signature = extract_signature_info(attr)
-                history = extract_history_info(attr)
-
-                verdict, severity = get_verdict(vt_malicious, vt_suspicious, 0)
-                show_verdict(verdict, severity)
-
-                st.subheader("Resumen")
-                st.write(
-                    f"El hash **{ioc}** presenta **{vt_malicious}/{vt_total if vt_total else 0}** "
-                    f"en VirusTotal y **{vt_suspicious}** detecciones sospechosas."
-                )
-
-                score_col, metrics_col = st.columns([1, 3])
-
-                with score_col:
-                    render_vt_score_card(vt_malicious, vt_total)
-
-                with metrics_col:
-                    m1, m2 = st.columns(2)
-                    m1.metric("VT Malicious", vt_malicious)
-                    m2.metric("VT Suspicious", vt_suspicious)
-
-                st.subheader("Contexto")
-                c1, c2, c3 = st.columns(3)
-                c1.write(f"**Nombre de archivo:** {file_name}")
-                c2.write(f"**Tipo de archivo:** {file_type}")
-                c3.write(f"**Tamaño:** {format_file_size(size)}")
-
-                st.subheader("History")
-                h1, h2, h3, h4 = st.columns(4)
-                h1.write(f"**Creation Time:** {history['creation_time']}")
-                h2.write(f"**First Submission:** {history['first_submission']}")
-                h3.write(f"**Last Submission:** {history['last_submission']}")
-                h4.write(f"**Last Analysis:** {history['last_analysis']}")
-
-                st.subheader("Firma digital")
-
-                if signature["is_signed"]:
-                    if signature["is_valid"]:
-                        st.success("El archivo está firmado digitalmente y la firma parece válida.")
+                    if vt_response["ok"]:
+                        vt = vt_response["json"]
+                        attr = vt.get("data", {}).get("attributes", {})
+                        stats = attr.get("last_analysis_stats", {})
+                        vt_malicious = stats.get("malicious", 0)
+                        vt_suspicious = stats.get("suspicious", 0)
+                        vt_total = total_engines_from_stats(stats)
+                        country_code = attr.get("country", "N/A")
+                        as_owner = attr.get("as_owner", "N/A")
+                        asn = attr.get("asn", "N/A")
+                        network = attr.get("network", "N/A")
+                        reputation = normalize_reputation(attr.get("reputation", "N/A"))
                     else:
-                        st.warning("El archivo está firmado digitalmente, pero la verificación no parece válida o no está clara.")
+                        vt_error = parse_api_error(
+                            "VirusTotal",
+                            vt_response["status_code"],
+                            vt_response["json"],
+                            vt_response["text"]
+                        )
+                        st.error(vt_error)
 
-                    s1, s2, s3 = st.columns(3)
-                    s1.write("**Firmado:** Sí")
-                    s2.write(f"**Verificación:** {signature['verified']}")
-                    s3.write(f"**Publisher:** {signature['publisher']}")
+                    if abuse_response["ok"]:
+                        abuse = abuse_response["json"]
+                        data = abuse.get("data", {})
+                        abuse_score = data.get("abuseConfidenceScore", 0)
+                        reports = data.get("totalReports", 0)
+                    else:
+                        abuse_error = parse_api_error(
+                            "AbuseIPDB",
+                            abuse_response["status_code"],
+                            abuse_response["json"],
+                            abuse_response["text"]
+                        )
+                        st.error(abuse_error)
 
-                    if signature["signers"]:
-                        st.write(f"**Signer(s):** {', '.join(signature['signers'])}")
+                    verdict, severity = get_verdict(vt_malicious, vt_suspicious, abuse_score)
+                    show_verdict_banner(verdict, severity)
 
-                    meta1, meta2, meta3, meta4 = st.columns(4)
-                    meta1.write(f"**Producto:** {signature['product']}")
-                    meta2.write(f"**Descripción:** {signature['description']}")
-                    meta3.write(f"**File Version:** {signature['file_version']}")
-                    meta4.write(f"**Date Signed:** {signature['date_signed']}")
-                else:
-                    st.error("El archivo NO está firmado digitalmente.")
-                    st.write(f"**Verificación:** {signature['verified']}")
+                    hostname = reverse_dns_lookup(ioc)
 
-                st.subheader("Enlaces")
-                vt_hash_link = f"https://www.virustotal.com/gui/file/{ioc}"
-                st.markdown(f"[{ioc} - VirusTotal]({vt_hash_link})")
+                    st.subheader("Resumen")
+                    st.write(
+                        f"La IP **{ioc}** presenta **{vt_malicious}/{vt_total if vt_total else 0}** "
+                        f"en VirusTotal, **{vt_suspicious}** detecciones sospechosas y "
+                        f"**abuse score {abuse_score}** con **{reports} reportes** en AbuseIPDB."
+                    )
 
-                ticket_text = build_ticket_text_hash(
-                    ioc=ioc,
-                    sha256=sha256,
-                    file_name=file_name,
-                    file_type=file_type,
-                    size=size,
-                    history=history,
-                    vt_malicious=vt_malicious,
-                    vt_total=vt_total,
-                    vt_suspicious=vt_suspicious,
-                    signature=signature,
-                    vt_link=vt_hash_link,
-                    verdict=verdict,
-                )
-                render_ticket_box(ticket_text, f"hash_{ioc[:12]}")
+                    score_col, metrics_col = st.columns([1, 3])
 
-            else:
-                show_api_error("VirusTotal", vt_response)
+                    with score_col:
+                        render_vt_score_card(vt_malicious, vt_total)
 
-        elif is_url(ioc):
-            ioc = normalize_url(ioc)
-            st.info("Tipo detectado: URL")
+                    with metrics_col:
+                        m1, m2 = st.columns(2)
+                        with m1:
+                            render_severity_badge("VT Malicious", vt_malicious, get_metric_severity_for_vt(vt_malicious))
+                            render_severity_badge("VT Suspicious", vt_suspicious, "medium" if vt_suspicious > 0 else "low")
+                        with m2:
+                            render_severity_badge("Abuse Score", abuse_score, get_metric_severity_for_abuse(abuse_score))
+                            render_severity_badge("Reports", reports, "medium" if reports > 0 else "low")
 
-            try:
-                vt_response = vt_url_lookup(ioc)
-            except requests.RequestException as e:
-                st.error(f"Error de red al consultar VirusTotal: {e}")
-                st.stop()
+                    render_abuse_score_bar(abuse_score, reports)
 
-            if vt_response.status_code == 200:
-                vt = safe_json(vt_response)
-                attr = vt.get("data", {}).get("attributes", {})
-                stats = attr.get("last_analysis_stats", {})
+                    st.subheader("Contexto")
+                    country_name = country_name_from_code(country_code)
+                    c1, c2, c3 = st.columns(3)
+                    c1.write(f"**País:** {country_name} ({country_code})")
+                    c2.write(f"**AS Owner:** {as_owner}")
+                    c3.write(f"**VT Reputation:** {reputation}")
 
-                vt_malicious = stats.get("malicious", 0)
-                vt_suspicious = stats.get("suspicious", 0)
-                vt_total = total_engines_from_stats(stats)
-                final_url = attr.get("url", ioc)
-                categories = attr.get("categories", {})
+                    c4, c5, c6 = st.columns(3)
+                    c4.write(f"**ASN:** {asn}")
+                    c5.write(f"**Network:** {network}")
+                    c6.write(f"**Reverse DNS:** {hostname}")
 
-                verdict, severity = get_verdict(vt_malicious, vt_suspicious, 0)
-                show_verdict(verdict, severity)
+                    observations = get_observations_ip(
+                        vt_malicious, vt_suspicious, abuse_score, reports, as_owner, hostname
+                    )
+                    st.subheader("Observaciones")
+                    st.write(observations)
 
-                st.subheader("Resumen")
-                st.write(
-                    f"La URL **{final_url}** presenta **{vt_malicious}/{vt_total if vt_total else 0}** "
-                    f"en VirusTotal y **{vt_suspicious}** detecciones sospechosas."
-                )
+                    st.subheader("Enlaces")
+                    vt_ip_link = f"https://www.virustotal.com/gui/ip-address/{ioc}"
+                    abuse_ip_link = f"https://www.abuseipdb.com/check/{ioc}"
+                    st.markdown(f"[{ioc} - VirusTotal]({vt_ip_link})")
+                    st.markdown(f"[{ioc} - AbuseIPDB]({abuse_ip_link})")
 
-                score_col, metrics_col = st.columns([1, 3])
+                    plain_links = (
+                        f"{ioc} - VirusTotal: {vt_ip_link}\n"
+                        f"{ioc} - AbuseIPDB: {abuse_ip_link}"
+                    )
+                    render_copy_box("Enlaces para ticket", plain_links, f"links_ip_{escape_key(ioc)}", height=110)
 
-                with score_col:
-                    render_vt_score_card(vt_malicious, vt_total)
+                    ticket_text = build_ticket_text_ip(
+                        ioc=ioc,
+                        vt_malicious=vt_malicious,
+                        vt_total=vt_total,
+                        vt_suspicious=vt_suspicious,
+                        reputation=reputation,
+                        abuse_score=abuse_score,
+                        reports=reports,
+                        country_name=country_name,
+                        country_code=country_code,
+                        as_owner=as_owner,
+                        asn=asn,
+                        network=network,
+                        hostname=hostname,
+                        vt_link=vt_ip_link,
+                        abuse_link=abuse_ip_link,
+                        verdict=verdict,
+                        observations=observations,
+                    )
+                    render_copy_box("Texto para ticket", ticket_text, f"ticket_ip_{escape_key(ioc)}", height=320)
 
-                with metrics_col:
-                    m1, m2 = st.columns(2)
-                    m1.metric("VT Malicious", vt_malicious)
-                    m2.metric("VT Suspicious", vt_suspicious)
+                    summary_rows.append({
+                        "IOC": ioc,
+                        "Tipo": "IP",
+                        "Veredicto": verdict,
+                        "VT Malicious": vt_malicious,
+                        "VT Suspicious": vt_suspicious,
+                        "Abuse Score": abuse_score,
+                        "Reports": reports,
+                    })
 
-                st.subheader("Contexto")
-                st.write(f"**URL:** {final_url}")
-                if categories:
+                elif ioc_type == "Hash":
+                    st.info("Tipo detectado: Hash")
+
+                    vt_response = vt_hash_lookup(ioc)
+                    if not vt_response["ok"]:
+                        err = parse_api_error(
+                            "VirusTotal",
+                            vt_response["status_code"],
+                            vt_response["json"],
+                            vt_response["text"]
+                        )
+                        st.error(err)
+                        summary_rows.append({
+                            "IOC": ioc,
+                            "Tipo": "Hash",
+                            "Veredicto": "Error",
+                            "VT Malicious": 0,
+                            "VT Suspicious": 0,
+                            "Abuse Score": "N/A",
+                            "Reports": "N/A",
+                        })
+                        continue
+
+                    vt = vt_response["json"]
+                    attr = vt.get("data", {}).get("attributes", {})
+                    stats = attr.get("last_analysis_stats", {})
+
+                    vt_malicious = stats.get("malicious", 0)
+                    vt_suspicious = stats.get("suspicious", 0)
+                    vt_total = total_engines_from_stats(stats)
+
+                    file_name = attr.get("meaningful_name", "N/A")
+                    file_type = attr.get("type_description", "N/A")
+                    size = attr.get("size", "N/A")
+                    sha256 = attr.get("sha256", "N/A")
+
+                    signature = extract_signature_info(attr)
+                    history = extract_history_info(attr)
+
+                    verdict, severity = get_verdict(vt_malicious, vt_suspicious, 0)
+                    show_verdict_banner(verdict, severity)
+
+                    st.subheader("Resumen")
+                    st.write(
+                        f"El hash **{ioc}** presenta **{vt_malicious}/{vt_total if vt_total else 0}** "
+                        f"en VirusTotal y **{vt_suspicious}** detecciones sospechosas."
+                    )
+
+                    score_col, metrics_col = st.columns([1, 3])
+                    with score_col:
+                        render_vt_score_card(vt_malicious, vt_total)
+
+                    with metrics_col:
+                        render_severity_badge("VT Malicious", vt_malicious, get_metric_severity_for_vt(vt_malicious))
+                        render_severity_badge("VT Suspicious", vt_suspicious, "medium" if vt_suspicious > 0 else "low")
+
+                    st.subheader("Contexto")
+                    c1, c2, c3 = st.columns(3)
+                    c1.write(f"**Nombre de archivo:** {file_name}")
+                    c2.write(f"**Tipo de archivo:** {file_type}")
+                    c3.write(f"**Tamaño:** {format_file_size(size)}")
+
+                    st.subheader("Historial")
+                    h1, h2, h3, h4 = st.columns(4)
+                    h1.write(f"**Fecha de creación:** {history['fecha_creacion']}")
+                    h2.write(f"**Primera subida a VT:** {history['primera_subida_vt']}")
+                    h3.write(f"**Última subida a VT:** {history['ultima_subida_vt']}")
+                    h4.write(f"**Último análisis:** {history['ultimo_analisis']}")
+
+                    st.subheader("Firma digital")
+                    if signature["is_signed"]:
+                        if signature["is_valid"]:
+                            st.success("El archivo está firmado digitalmente y la firma parece válida.")
+                        else:
+                            st.warning("El archivo está firmado digitalmente, pero la verificación no parece válida o no está clara.")
+
+                        s1, s2, s3 = st.columns(3)
+                        s1.write("**Firmado:** Sí")
+                        s2.write(f"**Verificación:** {signature['verified']}")
+                        s3.write(f"**Publisher:** {signature['publisher']}")
+
+                        if signature["signers"]:
+                            st.write(f"**Signer(s):** {', '.join(signature['signers'])}")
+
+                        meta1, meta2, meta3, meta4 = st.columns(4)
+                        meta1.write(f"**Producto:** {signature['product']}")
+                        meta2.write(f"**Descripción:** {signature['description']}")
+                        meta3.write(f"**Versión:** {signature['file_version']}")
+                        meta4.write(f"**Fecha firma:** {signature['date_signed']}")
+                    else:
+                        st.error("El archivo NO está firmado digitalmente.")
+                        st.write(f"**Verificación:** {signature['verified']}")
+
+                    observations = get_observations_hash(vt_malicious, vt_suspicious, signature)
+                    st.subheader("Observaciones")
+                    st.write(observations)
+
+                    st.subheader("Enlaces")
+                    vt_hash_link = f"https://www.virustotal.com/gui/file/{ioc}"
+                    st.markdown(f"[{ioc} - VirusTotal]({vt_hash_link})")
+
+                    plain_links = f"{ioc} - VirusTotal: {vt_hash_link}"
+                    render_copy_box("Enlaces para ticket", plain_links, f"links_hash_{escape_key(ioc[:16])}", height=90)
+
+                    ticket_text = build_ticket_text_hash(
+                        ioc=ioc,
+                        sha256=sha256,
+                        file_name=file_name,
+                        file_type=file_type,
+                        size=size,
+                        history=history,
+                        signature=signature,
+                        vt_malicious=vt_malicious,
+                        vt_total=vt_total,
+                        vt_suspicious=vt_suspicious,
+                        vt_link=vt_hash_link,
+                        verdict=verdict,
+                        observations=observations,
+                    )
+                    render_copy_box("Texto para ticket", ticket_text, f"ticket_hash_{escape_key(ioc[:16])}", height=340)
+
+                    summary_rows.append({
+                        "IOC": ioc,
+                        "Tipo": "Hash",
+                        "Veredicto": verdict,
+                        "VT Malicious": vt_malicious,
+                        "VT Suspicious": vt_suspicious,
+                        "Abuse Score": "N/A",
+                        "Reports": "N/A",
+                    })
+
+                elif ioc_type == "URL":
+                    normalized_ioc = normalize_url(ioc)
+                    st.info("Tipo detectado: URL")
+
+                    vt_response = vt_url_lookup(normalized_ioc)
+                    if not vt_response["ok"]:
+                        err = parse_api_error(
+                            "VirusTotal",
+                            vt_response["status_code"],
+                            vt_response["json"],
+                            vt_response["text"]
+                        )
+                        st.error(err)
+                        summary_rows.append({
+                            "IOC": ioc,
+                            "Tipo": "URL",
+                            "Veredicto": "Error",
+                            "VT Malicious": 0,
+                            "VT Suspicious": 0,
+                            "Abuse Score": "N/A",
+                            "Reports": "N/A",
+                        })
+                        continue
+
+                    vt = vt_response["json"]
+                    attr = vt.get("data", {}).get("attributes", {})
+                    stats = attr.get("last_analysis_stats", {})
+
+                    vt_malicious = stats.get("malicious", 0)
+                    vt_suspicious = stats.get("suspicious", 0)
+                    vt_total = total_engines_from_stats(stats)
+                    final_url = attr.get("url", normalized_ioc)
+                    categories = attr.get("categories", {})
+
+                    verdict, severity = get_verdict(vt_malicious, vt_suspicious, 0)
+                    show_verdict_banner(verdict, severity)
+
+                    st.subheader("Resumen")
+                    st.write(
+                        f"La URL **{final_url}** presenta **{vt_malicious}/{vt_total if vt_total else 0}** "
+                        f"en VirusTotal y **{vt_suspicious}** detecciones sospechosas."
+                    )
+
+                    score_col, metrics_col = st.columns([1, 3])
+                    with score_col:
+                        render_vt_score_card(vt_malicious, vt_total)
+
+                    with metrics_col:
+                        render_severity_badge("VT Malicious", vt_malicious, get_metric_severity_for_vt(vt_malicious))
+                        render_severity_badge("VT Suspicious", vt_suspicious, "medium" if vt_suspicious > 0 else "low")
+
+                    st.subheader("Contexto")
+                    st.write(f"**URL:** {final_url}")
                     st.write(f"**Categorías:** {format_categories(categories)}")
 
-                st.subheader("Enlaces")
-                vt_url_link = f"https://www.virustotal.com/gui/url/{vt_url_id(ioc)}"
-                st.markdown(f"[{final_url} - VirusTotal]({vt_url_link})")
+                    observations = get_observations_url(vt_malicious, vt_suspicious, categories)
+                    st.subheader("Observaciones")
+                    st.write(observations)
 
-                ticket_text = build_ticket_text_url(
-                    ioc=ioc,
-                    final_url=final_url,
-                    vt_malicious=vt_malicious,
-                    vt_total=vt_total,
-                    vt_suspicious=vt_suspicious,
-                    categories=categories,
-                    vt_link=vt_url_link,
-                    verdict=verdict,
-                )
-                render_ticket_box(ticket_text, "url_ticket")
+                    st.subheader("Enlaces")
+                    vt_url_link = f"https://www.virustotal.com/gui/url/{vt_url_id(normalized_ioc)}"
+                    st.markdown(f"[{final_url} - VirusTotal]({vt_url_link})")
 
-            else:
-                show_api_error("VirusTotal", vt_response)
+                    plain_links = f"{final_url} - VirusTotal: {vt_url_link}"
+                    render_copy_box("Enlaces para ticket", plain_links, f"links_url_{escape_key(final_url[:16])}", height=90)
 
-        else:
-            st.warning("Tipo de IOC no reconocido. Introduce una IP, URL o hash válido.")
+                    ticket_text = build_ticket_text_url(
+                        ioc=normalized_ioc,
+                        final_url=final_url,
+                        vt_malicious=vt_malicious,
+                        vt_total=vt_total,
+                        vt_suspicious=vt_suspicious,
+                        categories=categories,
+                        vt_link=vt_url_link,
+                        verdict=verdict,
+                        observations=observations,
+                    )
+                    render_copy_box("Texto para ticket", ticket_text, f"ticket_url_{escape_key(final_url[:16])}", height=300)
+
+                    summary_rows.append({
+                        "IOC": ioc,
+                        "Tipo": "URL",
+                        "Veredicto": verdict,
+                        "VT Malicious": vt_malicious,
+                        "VT Suspicious": vt_suspicious,
+                        "Abuse Score": "N/A",
+                        "Reports": "N/A",
+                    })
+
+                else:
+                    st.warning(f"Tipo de IOC no reconocido: {ioc}")
+                    summary_rows.append({
+                        "IOC": ioc,
+                        "Tipo": "Desconocido",
+                        "Veredicto": "No válido",
+                        "VT Malicious": "N/A",
+                        "VT Suspicious": "N/A",
+                        "Abuse Score": "N/A",
+                        "Reports": "N/A",
+                    })
+
+    # =========================
+    # RESUMEN FINAL
+    # =========================
+    st.markdown("---")
+    st.header("Resumen global")
+
+    df = pd.DataFrame(summary_rows)
+    st.dataframe(df, use_container_width=True)
+
+    summary_text_lines = ["IOC\tTipo\tVeredicto\tVT Malicious\tVT Suspicious\tAbuse Score\tReports"]
+    for row in summary_rows:
+        summary_text_lines.append(
+            f"{row['IOC']}\t{row['Tipo']}\t{row['Veredicto']}\t"
+            f"{row['VT Malicious']}\t{row['VT Suspicious']}\t{row['Abuse Score']}\t{row['Reports']}"
+        )
+    summary_text = "\n".join(summary_text_lines)
+
+    render_copy_box("Resumen global para copiar", summary_text, "global_summary", height=180)
