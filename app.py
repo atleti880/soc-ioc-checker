@@ -381,6 +381,155 @@ def extract_history_info(vt_attributes: dict) -> dict:
     }
 
 
+def format_categories(categories) -> str:
+    if not categories:
+        return "N/A"
+    if isinstance(categories, dict):
+        return ", ".join(f"{k}: {v}" for k, v in categories.items())
+    if isinstance(categories, list):
+        return ", ".join(str(x) for x in categories)
+    return str(categories)
+
+
+def build_ticket_markdown_ip(
+    ioc,
+    vt_malicious,
+    vt_total,
+    vt_suspicious,
+    reputation,
+    abuse_score,
+    reports,
+    country_name,
+    country_code,
+    as_owner,
+    vt_link,
+    abuse_link,
+    verdict
+):
+    analysis_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    return f"""### IOC CHECK - IP
+
+**Fecha de análisis:** {analysis_time}  
+**IOC analizado:** `{ioc}`  
+**Tipo:** IP  
+
+#### RESUMEN
+- **Resultado:** {verdict}
+- **VirusTotal:** {vt_malicious}/{vt_total} motores la clasifican como maliciosa
+- **Detecciones sospechosas en VT:** {vt_suspicious}
+- **VT Reputation:** {reputation}
+- **AbuseIPDB Confidence of Abuse:** {abuse_score}%
+- **Reportes en AbuseIPDB:** {reports}
+
+#### CONTEXTO
+- **País:** {country_name} ({country_code})
+- **AS Owner:** {as_owner}
+
+#### ENLACES
+- [{ioc} - VirusTotal]({vt_link})
+- [{ioc} - AbuseIPDB]({abuse_link})
+"""
+
+
+def build_ticket_markdown_hash(
+    ioc,
+    sha256,
+    file_name,
+    file_type,
+    size,
+    history,
+    vt_malicious,
+    vt_total,
+    vt_suspicious,
+    signature,
+    vt_link,
+    verdict
+):
+    analysis_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    return f"""### IOC CHECK - HASH
+
+**Fecha de análisis:** {analysis_time}  
+**IOC analizado:** `{ioc}`  
+**Tipo:** Hash  
+
+#### RESUMEN
+- **Resultado:** {verdict}
+- **VirusTotal:** {vt_malicious}/{vt_total} motores lo clasifican como malicioso
+- **Detecciones sospechosas en VT:** {vt_suspicious}
+
+#### DETALLES DEL ARCHIVO
+- **SHA256:** `{sha256}`
+- **Nombre de archivo:** {file_name}
+- **Tipo de archivo:** {file_type}
+- **Tamaño:** {format_file_size(size)}
+
+#### HISTORIAL
+- **Creation Time:** {history['creation_time']}
+- **First Submission:** {history['first_submission']}
+- **Last Submission:** {history['last_submission']}
+- **Last Analysis:** {history['last_analysis']}
+
+#### FIRMA DIGITAL
+- **Firmado:** {'Sí' if signature['is_signed'] else 'No'}
+- **Firma válida:** {'Sí' if signature['is_valid'] else 'No'}
+- **Verificación:** {signature['verified']}
+- **Publisher:** {signature['publisher']}
+- **Signers:** {', '.join(signature['signers']) if signature['signers'] else 'N/A'}
+- **Producto:** {signature['product']}
+- **Descripción:** {signature['description']}
+- **Versión:** {signature['file_version']}
+- **Fecha firma:** {signature['date_signed']}
+
+#### ENLACES
+- [{ioc} - VirusTotal]({vt_link})
+"""
+
+
+def build_ticket_markdown_url(
+    ioc,
+    final_url,
+    vt_malicious,
+    vt_total,
+    vt_suspicious,
+    categories,
+    vt_link,
+    verdict
+):
+    analysis_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    return f"""### IOC CHECK - URL
+
+**Fecha de análisis:** {analysis_time}  
+**IOC analizado:** `{ioc}`  
+**Tipo:** URL  
+
+#### RESUMEN
+- **Resultado:** {verdict}
+- **VirusTotal:** {vt_malicious}/{vt_total} motores la clasifican como maliciosa
+- **Detecciones sospechosas en VT:** {vt_suspicious}
+
+#### CONTEXTO
+- **URL final:** {final_url}
+- **Categorías:** {format_categories(categories)}
+
+#### ENLACES
+- [{final_url} - VirusTotal]({vt_link})
+"""
+
+
+def render_ticket_markdown(ticket_md: str, filename: str):
+    st.subheader("Texto para ticket")
+    st.markdown(ticket_md)
+    st.download_button(
+        "Descargar ticket .md",
+        data=ticket_md,
+        file_name=filename,
+        mime="text/markdown"
+    )
+
+
 def vt_ip_lookup(ip: str) -> requests.Response:
     url = f"https://www.virustotal.com/api/v3/ip_addresses/{ip}"
     return requests.get(url, headers=VT_HEADERS, timeout=20)
@@ -486,19 +635,22 @@ if ioc:
             st.markdown(f"[{ioc} - VirusTotal]({vt_ip_link})")
             st.markdown(f"[{ioc} - AbuseIPDB]({abuse_ip_link})")
 
-            ticket_text = f"""IOC analizado: {ioc}
-Tipo: IP
-VirusTotal: score={vt_malicious}/{vt_total}, suspicious={vt_suspicious}, reputation={reputation}
-AbuseIPDB: abuseConfidenceScore={abuse_score}, totalReports={reports}
-País: {country_name} ({country_code})
-AS Owner: {as_owner}
-Enlaces:
-- {ioc} - VirusTotal: {vt_ip_link}
-- {ioc} - AbuseIPDB: {abuse_ip_link}
-Conclusión: {verdict}
-"""
-            st.subheader("Texto para ticket")
-            st.code(ticket_text, language="text")
+            ticket_md = build_ticket_markdown_ip(
+                ioc=ioc,
+                vt_malicious=vt_malicious,
+                vt_total=vt_total,
+                vt_suspicious=vt_suspicious,
+                reputation=reputation,
+                abuse_score=abuse_score,
+                reports=reports,
+                country_name=country_name,
+                country_code=country_code,
+                as_owner=as_owner,
+                vt_link=vt_ip_link,
+                abuse_link=abuse_ip_link,
+                verdict=verdict,
+            )
+            render_ticket_markdown(ticket_md, f"ticket_ip_{ioc}.md")
 
         elif is_hash(ioc):
             st.info("Tipo detectado: Hash")
@@ -587,32 +739,24 @@ Conclusión: {verdict}
                 vt_hash_link = f"https://www.virustotal.com/gui/file/{ioc}"
                 st.markdown(f"[{ioc} - VirusTotal]({vt_hash_link})")
 
-                ticket_text = f"""IOC analizado: {ioc}
-Tipo: Hash
-SHA256: {sha256}
-Nombre de archivo: {file_name}
-Tipo de archivo: {file_type}
-Tamaño: {format_file_size(size)}
-Creation Time: {history['creation_time']}
-First Submission: {history['first_submission']}
-Last Submission: {history['last_submission']}
-Last Analysis: {history['last_analysis']}
-VirusTotal: score={vt_malicious}/{vt_total}, suspicious={vt_suspicious}
-Firmado: {'Sí' if signature['is_signed'] else 'No'}
-Firma válida: {'Sí' if signature['is_valid'] else 'No'}
-Verificación: {signature['verified']}
-Publisher: {signature['publisher']}
-Signers: {', '.join(signature['signers']) if signature['signers'] else 'N/A'}
-Producto: {signature['product']}
-Descripción: {signature['description']}
-Versión: {signature['file_version']}
-Fecha firma: {signature['date_signed']}
-Enlace:
-- {ioc} - VirusTotal: {vt_hash_link}
-Conclusión: {verdict}
-"""
-                st.subheader("Texto para ticket")
-                st.code(ticket_text, language="text")
+                ticket_md = build_ticket_markdown_hash(
+                    ioc=ioc,
+                    sha256=sha256,
+                    file_name=file_name,
+                    file_type=file_type,
+                    size=size,
+                    history=history,
+                    vt_malicious=vt_malicious,
+                    vt_total=vt_total,
+                    vt_suspicious=vt_suspicious,
+                    signature=signature,
+                    vt_link=vt_hash_link,
+                    verdict=verdict,
+                )
+                render_ticket_markdown(ticket_md, f"ticket_hash_{ioc}.md")
+
+            else:
+                show_api_error("VirusTotal", vt_response)
 
         elif is_url(ioc):
             ioc = normalize_url(ioc)
@@ -657,22 +801,26 @@ Conclusión: {verdict}
                 st.subheader("Contexto")
                 st.write(f"**URL:** {final_url}")
                 if categories:
-                    st.write(f"**Categorías:** {categories}")
+                    st.write(f"**Categorías:** {format_categories(categories)}")
 
                 st.subheader("Enlaces")
                 vt_url_link = f"https://www.virustotal.com/gui/url/{vt_url_id(ioc)}"
                 st.markdown(f"[{final_url} - VirusTotal]({vt_url_link})")
 
-                ticket_text = f"""IOC analizado: {ioc}
-Tipo: URL
-VirusTotal: score={vt_malicious}/{vt_total}, suspicious={vt_suspicious}
-Categorías: {categories if categories else 'N/A'}
-Enlace:
-- {final_url} - VirusTotal: {vt_url_link}
-Conclusión: {verdict}
-"""
-                st.subheader("Texto para ticket")
-                st.code(ticket_text, language="text")
+                ticket_md = build_ticket_markdown_url(
+                    ioc=ioc,
+                    final_url=final_url,
+                    vt_malicious=vt_malicious,
+                    vt_total=vt_total,
+                    vt_suspicious=vt_suspicious,
+                    categories=categories,
+                    vt_link=vt_url_link,
+                    verdict=verdict,
+                )
+                render_ticket_markdown(ticket_md, "ticket_url.md")
+
+            else:
+                show_api_error("VirusTotal", vt_response)
 
         else:
             st.warning("Tipo de IOC no reconocido. Introduce una IP, URL o hash válido.")
