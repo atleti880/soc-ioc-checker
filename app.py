@@ -141,6 +141,27 @@ def escape_key(value: str) -> str:
     return re.sub(r"[^a-zA-Z0-9_]", "_", value)
 
 
+def get_status_icon(verdict: str) -> str:
+    if verdict == "Malicioso":
+        return "🔴"
+    if verdict == "Sospechoso":
+        return "🟠"
+    if verdict == "Bajo riesgo":
+        return "🟢"
+    return "⚪"
+
+
+def build_vt_summary_link(ioc: str, ioc_type: str) -> str:
+    if ioc_type == "IP":
+        return f"https://www.virustotal.com/gui/ip-address/{ioc}"
+    if ioc_type == "Hash":
+        return f"https://www.virustotal.com/gui/file/{ioc}"
+    if ioc_type == "URL":
+        normalized = normalize_url(ioc)
+        return f"https://www.virustotal.com/gui/url/{vt_url_id(normalized)}"
+    return ""
+
+
 # =========================
 # VEREDICTO / OBSERVACIONES
 # =========================
@@ -952,6 +973,7 @@ if process:
                 abuse_ip_link = f"https://www.abuseipdb.com/check/{ioc}"
 
                 summary_rows.append({
+                    "Estado": get_status_icon(verdict),
                     "IOC": ioc,
                     "Tipo": "IP",
                     "Veredicto": verdict,
@@ -959,6 +981,7 @@ if process:
                     "VT Suspicious": vt_suspicious,
                     "Abuse Score": abuse_score,
                     "Reports": reports,
+                    "VirusTotal": build_vt_summary_link(ioc, "IP"),
                 })
 
                 detailed_results.append({
@@ -997,6 +1020,7 @@ if process:
                         vt_response["text"]
                     )
                     summary_rows.append({
+                        "Estado": "⚪",
                         "IOC": ioc,
                         "Tipo": "Hash",
                         "Veredicto": "Error",
@@ -1004,6 +1028,7 @@ if process:
                         "VT Suspicious": 0,
                         "Abuse Score": "N/A",
                         "Reports": "N/A",
+                        "VirusTotal": build_vt_summary_link(ioc, "Hash"),
                     })
                     detailed_results.append({
                         "ioc": ioc,
@@ -1035,6 +1060,7 @@ if process:
                 vt_hash_link = f"https://www.virustotal.com/gui/file/{ioc}"
 
                 summary_rows.append({
+                    "Estado": get_status_icon(verdict),
                     "IOC": ioc,
                     "Tipo": "Hash",
                     "Veredicto": verdict,
@@ -1042,6 +1068,7 @@ if process:
                     "VT Suspicious": vt_suspicious,
                     "Abuse Score": "N/A",
                     "Reports": "N/A",
+                    "VirusTotal": build_vt_summary_link(ioc, "Hash"),
                 })
 
                 detailed_results.append({
@@ -1077,6 +1104,7 @@ if process:
                         vt_response["text"]
                     )
                     summary_rows.append({
+                        "Estado": "⚪",
                         "IOC": ioc,
                         "Tipo": "URL",
                         "Veredicto": "Error",
@@ -1084,6 +1112,7 @@ if process:
                         "VT Suspicious": 0,
                         "Abuse Score": "N/A",
                         "Reports": "N/A",
+                        "VirusTotal": build_vt_summary_link(ioc, "URL"),
                     })
                     detailed_results.append({
                         "ioc": ioc,
@@ -1109,6 +1138,7 @@ if process:
                 vt_url_link = f"https://www.virustotal.com/gui/url/{vt_url_id(normalized_ioc)}"
 
                 summary_rows.append({
+                    "Estado": get_status_icon(verdict),
                     "IOC": ioc,
                     "Tipo": "URL",
                     "Veredicto": verdict,
@@ -1116,6 +1146,7 @@ if process:
                     "VT Suspicious": vt_suspicious,
                     "Abuse Score": "N/A",
                     "Reports": "N/A",
+                    "VirusTotal": build_vt_summary_link(ioc, "URL"),
                 })
 
                 detailed_results.append({
@@ -1138,6 +1169,7 @@ if process:
 
             else:
                 summary_rows.append({
+                    "Estado": "⚪",
                     "IOC": ioc,
                     "Tipo": "Desconocido",
                     "Veredicto": "No válido",
@@ -1145,6 +1177,7 @@ if process:
                     "VT Suspicious": "N/A",
                     "Abuse Score": "N/A",
                     "Reports": "N/A",
+                    "VirusTotal": "",
                 })
                 detailed_results.append({
                     "ioc": ioc,
@@ -1158,7 +1191,52 @@ if process:
     st.markdown("---")
     st.header("Resumen global")
     df = pd.DataFrame(summary_rows)
-    st.dataframe(df, use_container_width=True)
+
+    st.dataframe(
+        df,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Estado": st.column_config.TextColumn(
+                "Estado",
+                width="small",
+                help="Indicador visual del veredicto"
+            ),
+            "IOC": st.column_config.TextColumn(
+                "IOC",
+                width="large"
+            ),
+            "Tipo": st.column_config.TextColumn(
+                "Tipo",
+                width="small"
+            ),
+            "Veredicto": st.column_config.TextColumn(
+                "Veredicto",
+                width="medium"
+            ),
+            "VT Malicious": st.column_config.NumberColumn(
+                "VT Malicious",
+                width="small"
+            ),
+            "VT Suspicious": st.column_config.NumberColumn(
+                "VT Suspicious",
+                width="small"
+            ),
+            "Abuse Score": st.column_config.TextColumn(
+                "Abuse Score",
+                width="small"
+            ),
+            "Reports": st.column_config.TextColumn(
+                "Reports",
+                width="small"
+            ),
+            "VirusTotal": st.column_config.LinkColumn(
+                "VirusTotal",
+                width="medium",
+                display_text="Abrir VT"
+            ),
+        }
+    )
 
     st.markdown("---")
     st.header("Detalles por IOC")
