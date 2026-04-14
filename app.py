@@ -281,7 +281,7 @@ if st.button("Analizar IOC(s)", type="primary", use_container_width=True):
                 
                 summary_rows.append({
                     "Estado": get_status_icon(verd), "IOC": ioc, "Tipo": "Hash", "País": "N/A", "Firmado": firm_txt, "Veredicto": verd, 
-                    "VT Malicious": vt_m, "Abuse Score": "N/A", "VirusTotal": vt_l, "AbuseIPDB": "N/A"
+                    "VT Malicious": vt_m, "Abuse Score": "N/A", "VirusTotal": vt_l, "AbuseIPDB": None
                 })
                 
                 ticket_data_list.append(("Hash", ioc, {"sha": v_attr.get("sha256", ioc), "name": v_attr.get("meaningful_name", "N/A"), "type": v_attr.get("type_description", "N/A"), "size": v_attr.get("size", 0), "sig": sig, "vt_m": vt_m, "vt_t": vt_t, "vt_s": vt_s, "vt_l": vt_l, "verd": verd, "obs": "Hash analizado."}))
@@ -291,7 +291,7 @@ if st.button("Analizar IOC(s)", type="primary", use_container_width=True):
                 vt_l = f"https://www.virustotal.com/gui/url/{vt_url_id(ioc)}"
                 summary_rows.append({
                     "Estado": get_status_icon(verd), "IOC": ioc, "Tipo": "URL", "País": "N/A", "Firmado": "N/A", "Veredicto": verd, 
-                    "VT Malicious": vt_m, "Abuse Score": "N/A", "VirusTotal": vt_l, "AbuseIPDB": "N/A"
+                    "VT Malicious": vt_m, "Abuse Score": "N/A", "VirusTotal": vt_l, "AbuseIPDB": None
                 })
                 ticket_data_list.append(("URL", ioc, {"final": v_attr.get("url", ioc), "vt_m": vt_m, "vt_t": vt_t, "vt_s": vt_s, "cats": v_attr.get("categories", {}), "vt_l": vt_l, "verd": verd, "obs": "URL analizada."}))
 
@@ -299,7 +299,7 @@ if st.button("Analizar IOC(s)", type="primary", use_container_width=True):
     st.header("Resumen global")
     df = pd.DataFrame(summary_rows)
     
-    # Reordenar columnas para que coincida con tu imagen
+    # Reordenar columnas
     cols_order = ["Estado", "IOC", "Tipo", "País", "Firmado", "Veredicto", "VT Malicious", "Abuse Score", "VirusTotal", "AbuseIPDB"]
     df = df[cols_order]
 
@@ -312,8 +312,9 @@ if st.button("Analizar IOC(s)", type="primary", use_container_width=True):
         "Veredicto": st.column_config.TextColumn("Veredicto", width="small"),
         "VT Malicious": st.column_config.NumberColumn("VT Malicious", width="small"),
         "Abuse Score": st.column_config.TextColumn("Abuse Score", width="small"),
-        "VirusTotal": st.column_config.LinkColumn("VirusTotal", width="medium"),
-        "AbuseIPDB": st.column_config.LinkColumn("AbuseIPDB", width="medium"),
+        # AQUÍ ESTÁ EL CAMBIO PARA "Abrir enlace"
+        "VirusTotal": st.column_config.LinkColumn("VirusTotal", display_text="Abrir enlace", width="medium"),
+        "AbuseIPDB": st.column_config.LinkColumn("AbuseIPDB", display_text="Abrir enlace", width="medium"),
     })
 
     st.markdown("---")
