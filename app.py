@@ -762,7 +762,7 @@ ASN:         {asn}
 Network:     {network}
 Reverse DNS: {hostname}
 
-[3] ANÁLISIS DEL ANALISTA
+[3] OBSERVACIONES
 --------------------------------------------------
 {observations}
 
@@ -1317,10 +1317,6 @@ if process:
 
                 st.subheader("Observaciones")
                 st.write(observations)
-
-                st.subheader("Enlaces")
-                st.markdown(f"[{ioc} - VirusTotal]({vt_ip_link})")
-                st.markdown(f"[{ioc} - AbuseIPDB]({abuse_ip_link})")
 
                 ticket_text = build_ticket_text_ip(
                     ioc=ioc,
