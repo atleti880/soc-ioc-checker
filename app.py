@@ -958,6 +958,7 @@ if process:
                     "Estado": get_status_icon(verdict),
                     "IOC": ioc,
                     "Tipo": "IP",
+                    "País": country_name,
                     "Veredicto": verdict,
                     "VT Malicious": vt_malicious,
                     "VT Suspicious": vt_suspicious,
@@ -1047,6 +1048,7 @@ if process:
                     "Estado": get_status_icon(verdict),
                     "IOC": ioc,
                     "Tipo": "Hash",
+                    "País": "N/A",
                     "Veredicto": verdict,
                     "VT Malicious": vt_malicious,
                     "VT Suspicious": vt_suspicious,
@@ -1092,6 +1094,7 @@ if process:
                         "Estado": "⚪",
                         "IOC": ioc,
                         "Tipo": "URL",
+                        "País": country_name,
                         "Veredicto": "Error",
                         "VT Malicious": 0,
                         "VT Suspicious": 0,
@@ -1127,6 +1130,7 @@ if process:
                     "Estado": get_status_icon(verdict),
                     "IOC": ioc,
                     "Tipo": "URL",
+                    "País": country_name,
                     "Veredicto": verdict,
                     "VT Malicious": vt_malicious,
                     "VT Suspicious": vt_suspicious,
@@ -1197,6 +1201,10 @@ if process:
             "Tipo": st.column_config.TextColumn(
                 "Tipo",
                 width="small"
+            ),
+            "País": st.column_config.TextColumn(
+                "País",
+                width="medium",
             ),
             "Veredicto": st.column_config.TextColumn(
                 "Veredicto",
