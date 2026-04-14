@@ -104,91 +104,33 @@ def get_verdict(vt_m=0, vt_s=0, ab_s=0):
     return "Bajo riesgo"
 
 # =========================
-# FORMATOS DE TICKET (Investigación Interna)
+# FORMATOS DE TICKET
 # =========================
-def build_ticket_text_ip(ioc, vt_m, vt_t, vt_s, rep, ab_s, reps, c_n, c_c, as_o, asn, net, host, vt_l, ab_l, verd, obs):
-    return f"""--- INVESTIGACIÓN INTERNA ---
-IOC:         {ioc}
-TIPO:        IP Address
-ESTADO:      {verd.upper()}
-FECHA:       {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")}
+def build_internal_investigation(ioc, type, verd, vt_m, vt_t, vt_s, vt_l, details_dict):
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    text = f"--- INVESTIGACIÓN INTERNA ---\n"
+    text += f"IOC:         {ioc}\n"
+    text += f"TIPO:        {type}\n"
+    text += f"ESTADO:      {verd.upper()}\n"
+    text += f"FECHA:       {now}\n\n"
+    text += f"[1] REPUTACIÓN\n"
+    text += f"--------------------------------------------------\n"
+    text += f"VirusTotal:    {vt_m}/{vt_t} detecciones maliciosas\n"
+    if "ab_s" in details_dict:
+        text += f"AbuseIPDB:     {details_dict['ab_s']}% Confidence Score\n"
+    
+    text += f"\n[2] DETALLES TÉCNICOS\n"
+    text += f"--------------------------------------------------\n"
+    for k, v in details_dict.items():
+        if k != "ab_s": text += f"{k}: {v}\n"
+        
+    text += f"\n[3] EVIDENCIAS\n"
+    text += f"--------------------------------------------------\n"
+    text += f"- VirusTotal: {vt_l}\n"
+    if "ab_l" in details_dict:
+        text += f"- AbuseIPDB:  {details_dict.get('ab_l', 'N/A')}\n"
+    return text
 
-[1] REPUTACIÓN Y SCORE
---------------------------------------------------
-VirusTotal:    {vt_m}/{vt_t} detecciones maliciosas
-               {vt_s} detecciones sospechosas
-               Reputación VT: {rep}
-
-AbuseIPDB:     Confidence Score: {ab_s}%
-               Total Reportes: {reps}
-
-[2] INFORMACIÓN DE CONTEXTO
---------------------------------------------------
-País:        {c_n} ({c_c})
-Proveedor:   {as_o}
-ASN:         {asn}
-Red/Rango:   {net}
-Hostname:    {host}
-
-[3] OBSERVACIONES SOC
---------------------------------------------------
-{obs}
-
-[4] EVIDENCIAS Y ENLACES
---------------------------------------------------
-- VirusTotal: {vt_l}
-- AbuseIPDB:  {ab_l}
---------------------------------------------------"""
-
-def build_ticket_text_hash(ioc, sha, name, type, size, sig, vt_m, vt_t, vt_s, vt_l, verd, obs):
-    firmado = "SÍ" if sig["is_signed"] else "NO"
-    validez = "VÁLIDA" if sig["is_valid"] else "N/A"
-    return f"""--- INVESTIGACIÓN INTERNA (HASH) ---
-IOC (Hash):  {ioc}
-ESTADO:      {verd.upper()}
-
-[1] IDENTIFICACIÓN DEL ARCHIVO
---------------------------------------------------
-Nombre:      {name}
-Tipo:        {type}
-SHA256:      {sha}
-
-[2] REPUTACIÓN (VirusTotal)
---------------------------------------------------
-Detecciones: {vt_m}/{vt_t} motores maliciosos
-
-[3] FIRMA DIGITAL
---------------------------------------------------
-Firmado:     {firmado}
-Estado:      {validez}
-
-[4] EVIDENCIAS
---------------------------------------------------
-- VirusTotal: {vt_l}
---------------------------------------------------"""
-
-def build_ticket_text_url(ioc, final, vt_m, vt_t, vt_s, cats, vt_l, verd, obs):
-    return f"""--- INVESTIGACIÓN INTERNA (URL) ---
-URL:         {ioc}
-ESTADO:      {verd.upper()}
-
-[1] DETALLES
---------------------------------------------------
-URL Final:   {final}
-Categoría:   {", ".join(f"{k}: {v}" for k, v in cats.items()) if cats else "N/A"}
-
-[2] REPUTACIÓN
---------------------------------------------------
-Detecciones: {vt_m}/{vt_t} motores maliciosos
-
-[3] EVIDENCIAS
---------------------------------------------------
-- VirusTotal: {vt_l}
---------------------------------------------------"""
-
-# =========================
-# FORMATO DE ANÁLISIS DE IOC (Compacto)
-# =========================
 def build_short_analysis(ioc, type, verd, vt_l, ab_l=None):
     text = f"--- ANÁLISIS DE IOC ---\n"
     text += f"IOC:      {ioc}\n"
@@ -197,8 +139,7 @@ def build_short_analysis(ioc, type, verd, vt_l, ab_l=None):
     text += f"--------------------------------------------------\n"
     text += f"EVIDENCIAS:\n"
     text += f"- VirusTotal: {vt_l}\n"
-    if ab_l:
-        text += f"- AbuseIPDB:  {ab_l}\n"
+    if ab_l: text += f"- AbuseIPDB:  {ab_l}\n"
     text += f"--------------------------------------------------"
     return text
 
@@ -225,22 +166,27 @@ def render_copy_box(title: str, text: str, unique_key: str, height: int = 250):
 # =========================
 col_in, col_btn = st.columns([6, 1])
 with col_in:
-    raw_iocs = st.text_area("Introduce IOCs", key="ioc_input", height=120)
+    raw_iocs = st.text_area("Introduce IOCs (uno por línea)", key="ioc_input", height=150)
 with col_btn:
     st.write(" ")
     st.write(" ")
     st.button("Limpiar", on_click=clear_text)
 
 if st.button("Analizar IOC(s)", type="primary", use_container_width=True):
-    iocs = list(dict.fromkeys([x.strip() for x in raw_iocs.splitlines() if x.strip()]))
-    if not iocs: st.stop()
+    # Separar por líneas y eliminar duplicados/vacíos
+    input_list = list(dict.fromkeys([x.strip() for x in raw_iocs.splitlines() if x.strip()]))
+    
+    if not input_list:
+        st.warning("Por favor, introduce al menos un IOC.")
+        st.stop()
 
     summary_rows = []
-    ticket_data_list = []
+    results_to_render = []
 
-    with st.spinner("Procesando..."):
-        for ioc in iocs:
+    with st.spinner(f"Analizando {len(input_list)} IOC(s)..."):
+        for ioc in input_list:
             t = detect_ioc_type(ioc)
+            # VirusTotal Request
             vt_res = requests.get(f"https://www.virustotal.com/api/v3/{'ip_addresses' if t=='IP' else 'files' if t=='Hash' else 'urls'}/{vt_url_id(ioc) if t=='URL' else ioc}", headers=VT_HEADERS)
             v_attr = safe_json(vt_res).get("data", {}).get("attributes", {})
             
@@ -249,72 +195,58 @@ if st.button("Analizar IOC(s)", type="primary", use_container_width=True):
                 stats = v_attr.get("last_analysis_stats", {})
                 vt_m, vt_s, vt_t = stats.get("malicious", 0), stats.get("suspicious", 0), total_engines_from_stats(stats)
 
+            details = {}
+            ab_l = None
+            vt_l = f"https://www.virustotal.com/gui/{'ip-address' if t=='IP' else 'file' if t=='URL' else 'url'}/{vt_url_id(ioc) if t=='URL' else ioc}"
+
             if t == "IP":
                 a_res = requests.get("https://api.abuseipdb.com/api/v2/check", headers=ABUSE_HEADERS, params={"ipAddress": ioc})
                 a_data = safe_json(a_res).get("data", {})
                 ab_s = a_data.get("abuseConfidenceScore", 0)
+                ab_l = f"https://www.abuseipdb.com/check/{ioc}"
                 verd = get_verdict(vt_m, vt_s, ab_s)
                 c_n = country_name_from_code(v_attr.get("country"))
-                vt_l, ab_l = f"https://www.virustotal.com/gui/ip-address/{ioc}", f"https://www.abuseipdb.com/check/{ioc}"
                 
-                summary_rows.append({
-                    "Estado": get_status_icon(verd), "IOC": ioc, "Tipo": "IP", "País": c_n, "Firmado": "N/A", "Veredicto": verd, 
-                    "VT Malicious": vt_m, "Abuse Score": f"{ab_s}%", "VirusTotal": vt_l, "AbuseIPDB": ab_l
-                })
-                
-                host = "N/A"
-                try: host = socket.gethostbyaddr(ioc)[0]
-                except: pass
-                
-                internal = build_ticket_text_ip(ioc, vt_m, vt_t, vt_s, v_attr.get("reputation", 0), ab_s, a_data.get("totalReports", 0), c_n, v_attr.get("country", "N/A"), v_attr.get("as_owner", "N/A"), v_attr.get("asn", "N/A"), v_attr.get("network", "N/A"), host, vt_l, ab_l, verd, "IP analizada.")
-                short = build_short_analysis(ioc, "IP Address", verd, vt_l, ab_l)
-                ticket_data_list.append((ioc, internal, short))
+                details = {"ab_s": ab_s, "País": c_n, "ASN": v_attr.get("asn", "N/A"), "Proveedor": v_attr.get("as_owner", "N/A"), "ab_l": ab_l}
+                summary_rows.append({"Estado": get_status_icon(verd), "IOC": ioc, "Tipo": "IP", "País": c_n, "Firmado": "N/A", "Veredicto": verd, "VT Malicious": vt_m, "Abuse Score": f"{ab_s}%", "VirusTotal": vt_l, "AbuseIPDB": ab_l})
 
             elif t == "Hash":
                 sig_info = v_attr.get("signature_info", {})
-                sig = {"is_signed": bool(sig_info), "is_valid": sig_info.get("verified") == "Valid"}
+                is_valid = sig_info.get("verified") == "Valid"
+                firm_txt = "✅ Válida" if is_valid else ("⚠️ No válida" if sig_info else "❌ No")
                 verd = get_verdict(vt_m, vt_s)
-                firm_txt = "✅ Válida" if sig["is_valid"] else ("⚠️ No válida" if sig["is_signed"] else "❌ No")
-                vt_l = f"https://www.virustotal.com/gui/file/{ioc}"
-                
-                summary_rows.append({
-                    "Estado": get_status_icon(verd), "IOC": ioc, "Tipo": "Hash", "País": "N/A", "Firmado": firm_txt, "Veredicto": verd, 
-                    "VT Malicious": vt_m, "Abuse Score": "N/A", "VirusTotal": vt_l, "AbuseIPDB": None
-                })
-                
-                internal = build_ticket_text_hash(ioc, v_attr.get("sha256", ioc), v_attr.get("meaningful_name", "N/A"), v_attr.get("type_description", "N/A"), v_attr.get("size", 0), sig, vt_m, vt_t, vt_s, vt_l, verd, "Hash analizado.")
-                short = build_short_analysis(ioc, "Archivo (Hash)", verd, vt_l)
-                ticket_data_list.append((ioc, internal, short))
+                details = {"Nombre": v_attr.get("meaningful_name", "N/A"), "Tipo": v_attr.get("type_description", "N/A"), "SHA256": v_attr.get("sha256", "N/A")}
+                summary_rows.append({"Estado": get_status_icon(verd), "IOC": ioc, "Tipo": "Hash", "País": "N/A", "Firmado": firm_txt, "Veredicto": verd, "VT Malicious": vt_m, "Abuse Score": "N/A", "VirusTotal": vt_l, "AbuseIPDB": None})
 
             elif t == "URL":
                 verd = get_verdict(vt_m, vt_s)
-                vt_l = f"https://www.virustotal.com/gui/url/{vt_url_id(ioc)}"
-                summary_rows.append({
-                    "Estado": get_status_icon(verd), "IOC": ioc, "Tipo": "URL", "País": "N/A", "Firmado": "N/A", "Veredicto": verd, 
-                    "VT Malicious": vt_m, "Abuse Score": "N/A", "VirusTotal": vt_l, "AbuseIPDB": None
-                })
-                
-                internal = build_ticket_text_url(ioc, v_attr.get("url", ioc), vt_m, vt_t, vt_s, v_attr.get("categories", {}), vt_l, verd, "URL analizada.")
-                short = build_short_analysis(ioc, "URL", verd, vt_l)
-                ticket_data_list.append((ioc, internal, short))
+                details = {"URL Final": v_attr.get("url", ioc), "Categorías": str(v_attr.get("categories", "N/A"))}
+                summary_rows.append({"Estado": get_status_icon(verd), "IOC": ioc, "Tipo": "URL", "País": "N/A", "Firmado": "N/A", "Veredicto": verd, "VT Malicious": vt_m, "Abuse Score": "N/A", "VirusTotal": vt_l, "AbuseIPDB": None})
+            else:
+                continue
 
-    # VISUALIZACIÓN DE TABLA
+            results_to_render.append({
+                "ioc": ioc,
+                "internal": build_internal_investigation(ioc, t, verd, vt_m, vt_t, vt_s, vt_l, details),
+                "short": build_short_analysis(ioc, t, verd, vt_l, ab_l)
+            })
+
+    # MOSTRAR RESULTADOS
     st.header("Resumen global")
     df = pd.DataFrame(summary_rows)
-    cols_order = ["Estado", "IOC", "Tipo", "País", "Firmado", "Veredicto", "VT Malicious", "Abuse Score", "VirusTotal", "AbuseIPDB"]
-    st.dataframe(df[cols_order], use_container_width=True, hide_index=True, column_config={
-        "VirusTotal": st.column_config.LinkColumn("VirusTotal", display_text="Abrir enlace"),
-        "AbuseIPDB": st.column_config.LinkColumn("AbuseIPDB", display_text="Abrir enlace"),
+    st.dataframe(df, use_container_width=True, hide_index=True, column_config={
+        "VirusTotal": st.column_config.LinkColumn("VirusTotal", display_text="Enlace VT"),
+        "AbuseIPDB": st.column_config.LinkColumn("AbuseIPDB", display_text="Enlace ABUSEIP")
     })
 
     st.markdown("---")
-    st.header("Sección de Tickets")
+    st.header("Texto para tickets")
     
-    for ioc_val, internal_txt, short_txt in ticket_data_list:
-        st.markdown(f"### IOC: `{ioc_val}`")
-        col1, col2 = st.columns(2)
-        with col1:
-            render_copy_box("Investigación Interna", internal_txt, f"int_{escape_key(ioc_val)}")
-        with col2:
-            render_copy_box("Análisis de IOC", short_txt, f"short_{escape_key(ioc_val)}")
+    for res in results_to_render:
+        st.markdown(f"### Resultado para: `{res['ioc']}`")
+        c1, c2 = st.columns(2)
+        with c1:
+            render_copy_box("Investigación Interna", res["internal"], f"int_{escape_key(res['ioc'])}")
+        with c2:
+            render_copy_box("Análisis de IOC", res["short"], f"short_{escape_key(res['ioc'])}")
         st.markdown("---")
