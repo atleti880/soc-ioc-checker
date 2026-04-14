@@ -733,143 +733,119 @@ def abuse_lookup(ip: str) -> dict:
 # TEXTO PARA TICKET
 # =========================
 def build_ticket_text_ip(
-    ioc,
-    vt_malicious,
-    vt_total,
-    vt_suspicious,
-    reputation,
-    abuse_score,
-    reports,
-    country_name,
-    country_code,
-    as_owner,
-    asn,
-    network,
-    hostname,
-    vt_link,
-    abuse_link,
-    verdict,
-    observations,
+    ioc, vt_malicious, vt_total, vt_suspicious, reputation,
+    abuse_score, reports, country_name, country_code,
+    as_owner, asn, network, hostname, vt_link, abuse_link,
+    verdict, observations,
 ):
     analysis_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
-    return f"""IOC: {ioc}
-Tipo: IP
-Fecha de análisis: {analysis_time}
-Resultado: {verdict}
+    return f"""--- DETALLES DEL INDICADOR (IOC) ---
+IOC:         {ioc}
+TIPO:        IP Address
+ESTADO:      {verdict.upper()}
+FECHA/HORA:  {analysis_time}
 
-Resumen:
-- VT: {vt_malicious}/{vt_total}
-- VT suspicious: {vt_suspicious}
-- VT reputation: {reputation}
-- AbuseIPDB: {abuse_score}%
-- Reports: {reports}
+[1] REPUTACIÓN Y SCORE
+--------------------------------------------------
+VirusTotal:    {vt_malicious}/{vt_total} detecciones
+VT Suspicious: {vt_suspicious}
+VT Reputation: {reputation}
+AbuseIPDB:     {abuse_score}% (Confidence of Abuse)
+Reports:       {reports} reportes registrados
 
-Contexto:
-- País: {country_name} ({country_code})
-- AS Owner: {as_owner}
-- ASN: {asn}
-- Network: {network}
-- Reverse DNS: {hostname}
+[2] INFORMACIÓN DE CONTEXTO (WHOIS)
+--------------------------------------------------
+País:        {country_name} ({country_code})
+AS Owner:    {as_owner}
+ASN:         {asn}
+Network:     {network}
+Reverse DNS: {hostname}
 
-Observaciones:
-- {observations}
+[3] ANÁLISIS DEL ANALISTA
+--------------------------------------------------
+{observations}
 
-Enlaces:
-- {ioc} - VirusTotal: {vt_link}
-- {ioc} - AbuseIPDB: {abuse_link}
-"""
+[4] EVIDENCIAS (ENLACES)
+--------------------------------------------------
+- VirusTotal: {vt_link}
+- AbuseIPDB:  {abuse_link}
+--------------------------------------------------"""
 
 
 def build_ticket_text_hash(
-    ioc,
-    sha256,
-    file_name,
-    file_type,
-    size,
-    history,
-    signature,
-    vt_malicious,
-    vt_total,
-    vt_suspicious,
-    vt_link,
-    verdict,
-    observations,
+    ioc, sha256, file_name, file_type, size, history,
+    signature, vt_malicious, vt_total, vt_suspicious,
+    vt_link, verdict, observations,
 ):
     analysis_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    is_signed = "SÍ" if signature['is_signed'] else "NO"
+    is_valid = "VÁLIDA" if signature['is_valid'] else "NO VÁLIDA / N/A"
 
-    return f"""IOC: {ioc}
-Tipo: Hash
-Fecha de análisis: {analysis_time}
-Resultado: {verdict}
+    return f"""--- ANÁLISIS DE ARCHIVO MALICIOSO ---
+IOC (Hash):  {ioc}
+ESTADO:      {verdict.upper()}
+FECHA/HORA:  {analysis_time}
 
-Resumen:
-- VT: {vt_malicious}/{vt_total}
-- VT suspicious: {vt_suspicious}
+[1] IDENTIFICACIÓN DEL ARCHIVO
+--------------------------------------------------
+Nombre:      {file_name}
+Tipo:        {file_type}
+Tamaño:      {format_file_size(size)}
+SHA256:      {sha256}
 
-Detalles:
-- SHA256: {sha256}
-- Nombre de archivo: {file_name}
-- Tipo de archivo: {file_type}
-- Tamaño: {format_file_size(size)}
+[2] SEGURIDAD Y FIRMA DIGITAL
+--------------------------------------------------
+Firmado:     {is_signed}
+Firma:       {is_valid}
+Publisher:   {signature['publisher']}
+Producto:    {signature['product']}
 
-Historial:
-- Fecha de creación: {history['fecha_creacion']}
-- Primera subida a VT: {history['primera_subida_vt']}
-- Última subida a VT: {history['ultima_subida_vt']}
-- Último análisis: {history['ultimo_analisis']}
+[3] REPUTACIÓN (VIRUSTOTAL)
+--------------------------------------------------
+Detecciones: {vt_malicious}/{vt_total}
+Sospechosos: {vt_suspicious}
+Análisis:    {history['ultimo_analisis']}
 
-Firma digital:
-- Firmado: {'Sí' if signature['is_signed'] else 'No'}
-- Firma válida: {'Sí' if signature['is_valid'] else 'No'}
-- Verificación: {signature['verified']}
-- Publisher: {signature['publisher']}
-- Signers: {', '.join(signature['signers']) if signature['signers'] else 'N/A'}
-- Producto: {signature['product']}
-- Descripción: {signature['description']}
-- Versión: {signature['file_version']}
-- Fecha firma: {signature['date_signed']}
+[4] OBSERVACIONES
+--------------------------------------------------
+{observations}
 
-Observaciones:
-- {observations}
-
-Enlaces:
-- {ioc} - VirusTotal: {vt_link}
-"""
+[5] EVIDENCIA
+--------------------------------------------------
+VirusTotal:  {vt_link}
+--------------------------------------------------"""
 
 
 def build_ticket_text_url(
-    ioc,
-    final_url,
-    vt_malicious,
-    vt_total,
-    vt_suspicious,
-    categories,
-    vt_link,
-    verdict,
-    observations,
+    ioc, final_url, vt_malicious, vt_total, vt_suspicious,
+    categories, vt_link, verdict, observations,
 ):
     analysis_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
-    return f"""IOC: {ioc}
-Tipo: URL
-Fecha de análisis: {analysis_time}
-Resultado: {verdict}
+    return f"""--- ANÁLISIS DE URL/DOMINIO ---
+URL:         {ioc}
+ESTADO:      {verdict.upper()}
+FECHA/HORA:  {analysis_time}
 
-Resumen:
-- VT: {vt_malicious}/{vt_total}
-- VT suspicious: {vt_suspicious}
+[1] DETALLES DE NAVEGACIÓN
+--------------------------------------------------
+URL Final:   {final_url}
+Categorías:  {format_categories(categories)}
 
-Contexto:
-- URL final: {final_url}
-- Categorías: {format_categories(categories)}
+[2] REPUTACIÓN
+--------------------------------------------------
+VirusTotal:  {vt_malicious}/{vt_total} detecciones
+Sospechosos: {vt_suspicious}
 
-Observaciones:
-- {observations}
+[3] ANÁLISIS Y OBSERVACIONES
+--------------------------------------------------
+{observations}
 
-Enlaces:
-- {final_url} - VirusTotal: {vt_link}
-"""
+[4] EVIDENCIA
+--------------------------------------------------
+VirusTotal:  {vt_link}
+--------------------------------------------------"""
 
 
 # =========================
@@ -1484,7 +1460,7 @@ if process:
                 st.write(observations)
 
                 st.subheader("Enlaces")
-                st.markdown(f"[{final_url} - VirusTotal]({vt_url_link})")
+                st.markdown(f"[{final_url} - VirusTotal]({vt_url_link})\n")
 
                 ticket_text = build_ticket_text_url(
                     ioc=normalized_ioc,
