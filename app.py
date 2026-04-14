@@ -207,13 +207,13 @@ Detecciones: {vt_m}/{vt_t} motores maliciosos
 - VirusTotal: {vt_l}
 --------------------------------------------------"""
 
-def render_copy_box(title: str, text: str, unique_key: str, height: int = 300):
-    st.subheader(title)
+def render_copy_box_no_title(text: str, unique_key: str, height: int = 300):
+    # Se ha eliminado el st.subheader() para que no aparezca "Ticket IP"
     escaped_text = html.escape(text)
     component_html = f"""
-    <div style="margin-bottom: 10px;">
+    <div style="margin-bottom: 20px; margin-top: 10px;">
         <textarea id="cb_{unique_key}" readonly style="width: 100%; height: {height}px; padding: 10px; background: #0e1117; color: #fafafa; font-family: monospace; font-size: 13px; border-radius: 5px; border: 1px solid #4a4a4a;">{escaped_text}</textarea>
-        <button onclick="copy_{unique_key}()" style="margin-top: 8px; background: #ff4b4b; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold;">Copiar Portapapeles</button>
+        <button onclick="copy_{unique_key}()" style="margin-top: 8px; background: #ff4b4b; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold;">Copiar Ticket</button>
     </div>
     <script>
     function copy_{unique_key}() {{
@@ -298,8 +298,6 @@ if st.button("Analizar IOC(s)", type="primary", use_container_width=True):
     # VISUALIZACIÓN
     st.header("Resumen global")
     df = pd.DataFrame(summary_rows)
-    
-    # Reordenar columnas
     cols_order = ["Estado", "IOC", "Tipo", "País", "Firmado", "Veredicto", "VT Malicious", "Abuse Score", "VirusTotal", "AbuseIPDB"]
     df = df[cols_order]
 
@@ -312,13 +310,14 @@ if st.button("Analizar IOC(s)", type="primary", use_container_width=True):
         "Veredicto": st.column_config.TextColumn("Veredicto", width="small"),
         "VT Malicious": st.column_config.NumberColumn("VT Malicious", width="small"),
         "Abuse Score": st.column_config.TextColumn("Abuse Score", width="small"),
-        # AQUÍ ESTÁ EL CAMBIO PARA "Abrir enlace"
         "VirusTotal": st.column_config.LinkColumn("VirusTotal", display_text="Abrir enlace", width="medium"),
         "AbuseIPDB": st.column_config.LinkColumn("AbuseIPDB", display_text="Abrir enlace", width="medium"),
     })
 
     st.markdown("---")
+    # Título general de la sección
     st.header("Texto para tickets")
+    
     for type, ioc, d in ticket_data_list:
         if type == "IP":
             txt = build_ticket_text_ip(ioc, d["vt_m"], d["vt_t"], d["vt_s"], d["rep"], d["ab_s"], d["reps"], d["c_n"], d["c_c"], d["as"], d["asn"], d["net"], d["host"], d["vt_l"], d["ab_l"], d["verd"], d["obs"])
@@ -326,4 +325,6 @@ if st.button("Analizar IOC(s)", type="primary", use_container_width=True):
             txt = build_ticket_text_hash(ioc, d["sha"], d["name"], d["type"], d["size"], d["sig"], d["vt_m"], d["vt_t"], d["vt_s"], d["vt_l"], d["verd"], d["obs"])
         else:
             txt = build_ticket_text_url(ioc, d["final"], d["vt_m"], d["vt_t"], d["vt_s"], d["cats"], d["vt_l"], d["verd"], d["obs"])
-        render_copy_box(f"Ticket {type}", txt, escape_key(ioc))
+        
+        # Muestra el cuadro directamente sin el sub-título "Ticket IP"
+        render_copy_box_no_title(txt, escape_key(ioc))
