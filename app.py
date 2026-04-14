@@ -3,6 +3,7 @@ import html
 import ipaddress
 import re
 import socket
+import whois  # <-- Nueva librería para el WHOIS
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
@@ -24,7 +25,7 @@ ABUSE_HEADERS = {"Key": ABUSE_API, "Accept": "application/json"}
 st.set_page_config(page_title="SOC IOC Checker", page_icon="🛡️", layout="wide")
 
 st.title("SOC IOC Checker")
-st.caption("Consulta IP / URL / Hash en VirusTotal y AbuseIPDB")
+st.caption("Consulta IP / URL / Hash con WHOIS integrado")
 
 # =========================
 # LÓGICA DE LIMPIEZA
@@ -89,6 +90,23 @@ def total_engines_from_stats(stats: dict) -> int:
     if not isinstance(stats, dict): return 0
     return sum(v for v in stats.values() if isinstance(v, int))
 
+def get_whois_info(target):
+    """Obtiene información básica de WHOIS para IPs o URLs"""
+    try:
+        w = whois.whois(target)
+        # Extraer datos relevantes y formatearlos
+        info = []
+        if w.registrar: info.append(f"Registrador: {w.registrar}")
+        if w.creation_date:
+            date = w.creation_date[0] if isinstance(w.creation_date, list) else w.creation_date
+            info.append(f"Fecha Creación: {date}")
+        if w.country: info.append(f"País Registro: {w.country}")
+        if w.org: info.append(f"Organización: {w.org}")
+        
+        return "\n".join(info) if info else "No se encontró información detallada en WHOIS."
+    except Exception as e:
+        return f"Error al consultar WHOIS: {str(e)}"
+
 def get_status_icon(verdict: str) -> str:
     if verdict == "Malicioso": return "🔴"
     if verdict == "Sospechoso": return "🟠"
@@ -103,7 +121,7 @@ def get_verdict(vt_m=0, vt_s=0, ab_s=0):
 # =========================
 # FUNCIONES DE CONSTRUCCIÓN DE TEXTO
 # =========================
-def build_internal_text(ioc, type, verd, vt_m, vt_t, vt_s, vt_l, details_dict):
+def build_internal_text(ioc, type, verd, vt_m, vt_t, vt_s, vt_l, details_dict, whois_text=""):
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     text = f"--- INVESTIGACIÓN INTERNA ---\n"
     text += f"IOC:         {ioc}\n"
@@ -120,8 +138,13 @@ def build_internal_text(ioc, type, verd, vt_m, vt_t, vt_s, vt_l, details_dict):
     text += f"--------------------------------------------------\n"
     for k, v in details_dict.items():
         if k not in ['ab_s', 'ab_l']: text += f"{k}: {v}\n"
-        
-    text += f"\n[3] EVIDENCIAS\n"
+    
+    if whois_text:
+        text += f"\n[3] WHOIS INFO\n"
+        text += f"--------------------------------------------------\n"
+        text += f"{whois_text}\n"
+
+    text += f"\n[4] EVIDENCIAS\n"
     text += f"--------------------------------------------------\n"
     text += f"- VirusTotal: {vt_l}\n"
     if 'ab_l' in details_dict: text += f"- AbuseIPDB:  {details_dict['ab_l']}\n"
@@ -190,6 +213,7 @@ if st.button("Analizar IOC(s)", type="primary", use_container_width=True):
 
             details = {}
             ab_l = None
+            whois_data = ""
             vt_l = f"https://www.virustotal.com/gui/{'ip-address' if t=='IP' else 'file' if t=='Hash' else 'url'}/{vt_url_id(ioc) if t=='URL' else ioc}"
 
             if t == "IP":
@@ -200,6 +224,7 @@ if st.button("Analizar IOC(s)", type="primary", use_container_width=True):
                 verd = get_verdict(vt_m, vt_s, ab_s)
                 c_n = country_name_from_code(v_attr.get("country"))
                 details = {"ab_s": ab_s, "País": c_n, "Proveedor": v_attr.get("as_owner", "N/A"), "ab_l": ab_l}
+                whois_data = get_whois_info(ioc)
                 summary_rows.append({"Estado": get_status_icon(verd), "IOC": ioc, "Tipo": "IP", "País": c_n, "Firmado": "N/A", "Veredicto": verd, "VT Malicious": vt_m, "Abuse Score": f"{ab_s}%", "VirusTotal": vt_l, "AbuseIPDB": ab_l})
 
             elif t == "Hash":
@@ -212,27 +237,33 @@ if st.button("Analizar IOC(s)", type="primary", use_container_width=True):
             elif t == "URL":
                 verd = get_verdict(vt_m, vt_s)
                 details = {"URL Final": v_attr.get("url", ioc)}
+                # Extraer dominio para el WHOIS
+                try:
+                    domain = urlparse(normalize_url(ioc)).netloc
+                    whois_data = get_whois_info(domain)
+                except: pass
                 summary_rows.append({"Estado": get_status_icon(verd), "IOC": ioc, "Tipo": "URL", "País": "N/A", "Firmado": "N/A", "Veredicto": verd, "VT Malicious": vt_m, "Abuse Score": "N/A", "VirusTotal": vt_l, "AbuseIPDB": None})
             else: continue
 
-            # Acumular textos
-            all_internal_text += build_internal_text(ioc, t, verd, vt_m, vt_t, vt_s, vt_l, details)
+            # Acumular textos (ahora enviamos whois_data)
+            all_internal_text += build_internal_text(ioc, t, verd, vt_m, vt_t, vt_s, vt_l, details, whois_data)
             all_short_text += build_short_text(ioc, t, verd, vt_l, ab_l)
 
     # MOSTRAR TABLA
     st.header("Resumen global")
-    df = pd.DataFrame(summary_rows)
-    st.dataframe(df, use_container_width=True, hide_index=True, column_config={
-        "VirusTotal": st.column_config.LinkColumn("VirusTotal", display_text="Abrir enlace"),
-        "AbuseIPDB": st.column_config.LinkColumn("AbuseIPDB", display_text="Abrir enlace")
-    })
+    if summary_rows:
+        df = pd.DataFrame(summary_rows)
+        st.dataframe(df, use_container_width=True, hide_index=True, column_config={
+            "VirusTotal": st.column_config.LinkColumn("VirusTotal", display_text="Abrir enlace"),
+            "AbuseIPDB": st.column_config.LinkColumn("AbuseIPDB", display_text="Abrir enlace")
+        })
 
-    # MOSTRAR CAJAS DE COPIA (SÓLO 2 CAJAS TOTALES)
+    # MOSTRAR CAJAS DE COPIA
     st.markdown("---")
     st.header("Texto para tickets")
     
     col1, col2 = st.columns(2)
     with col1:
-        render_copy_box("Investigación Interna", all_internal_text, "all_internal", height=500)
+        render_copy_box("Investigación Interna", all_internal_text, "all_internal", height=600)
     with col2:
-        render_copy_box("Análisis de IOC", all_short_text, "all_short", height=500)
+        render_copy_box("Análisis de IOC", all_short_text, "all_short", height=600)
