@@ -213,7 +213,7 @@ def render_copy_box(title: str, text: str, unique_key: str, height: int = 300):
     component_html = f"""
     <div style="margin-bottom: 10px;">
         <textarea id="cb_{unique_key}" readonly style="width: 100%; height: {height}px; padding: 10px; background: #0e1117; color: #fafafa; font-family: monospace; font-size: 13px; border-radius: 5px; border: 1px solid #4a4a4a;">{escaped_text}</textarea>
-        <button onclick="copy_{unique_key}()" style="margin-top: 8px; background: #ff4b4b; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold;">Copiar Ticket</button>
+        <button onclick="copy_{unique_key}()" style="margin-top: 8px; background: #ff4b4b; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold;">Copiar Portapapeles</button>
     </div>
     <script>
     function copy_{unique_key}() {{
