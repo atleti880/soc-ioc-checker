@@ -326,4 +326,4 @@ if st.button("Analizar IOC(s)", type="primary", use_container_width=True):
             txt = build_ticket_text_hash(ioc, d["sha"], d["name"], d["type"], d["size"], d["sig"], d["vt_m"], d["vt_t"], d["vt_s"], d["vt_l"], d["verd"], d["obs"])
         else:
             txt = build_ticket_text_url(ioc, d["final"], d["vt_m"], d["vt_t"], d["vt_s"], d["cats"], d["vt_l"], d["verd"], d["obs"])
-        render_copy_box(f"Ticket {type}: {ioc}", txt, escape_key(ioc))
+        render_copy_box(f"Ticket {type}", txt, escape_key(ioc))
