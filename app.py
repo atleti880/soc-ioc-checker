@@ -89,9 +89,6 @@ def total_engines_from_stats(stats: dict) -> int:
     if not isinstance(stats, dict): return 0
     return sum(v for v in stats.values() if isinstance(v, int))
 
-def escape_key(value: str) -> str:
-    return re.sub(r"[^a-zA-Z0-9_]", "_", value)
-
 def get_status_icon(verdict: str) -> str:
     if verdict == "Malicioso": return "🔴"
     if verdict == "Sospechoso": return "🟠"
@@ -104,13 +101,10 @@ def get_verdict(vt_m=0, vt_s=0, ab_s=0):
     return "Bajo riesgo"
 
 # =========================
-# GENERACIÓN DE TEXTO UNIFICADO
+# FUNCIONES DE CONSTRUCCIÓN DE TEXTO
 # =========================
-def build_combined_ticket(ioc, type, verd, vt_m, vt_t, vt_s, vt_l, details_dict):
+def build_internal_text(ioc, type, verd, vt_m, vt_t, vt_s, vt_l, details_dict):
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-    ab_l = details_dict.get('ab_l')
-    
-    # Bloque 1: Investigación Interna
     text = f"--- INVESTIGACIÓN INTERNA ---\n"
     text += f"IOC:         {ioc}\n"
     text += f"TIPO:        {type}\n"
@@ -130,13 +124,12 @@ def build_combined_ticket(ioc, type, verd, vt_m, vt_t, vt_s, vt_l, details_dict)
     text += f"\n[3] EVIDENCIAS\n"
     text += f"--------------------------------------------------\n"
     text += f"- VirusTotal: {vt_l}\n"
-    if ab_l: text += f"- AbuseIPDB:  {ab_l}\n"
-    
-    # Separador visual entre bloques
-    text += f"\n\n" + "="*50 + "\n\n"
-    
-    # Bloque 2: Análisis de IOC
-    text += f"--- ANÁLISIS DE IOC ---\n"
+    if 'ab_l' in details_dict: text += f"- AbuseIPDB:  {details_dict['ab_l']}\n"
+    text += "\n" + "-"*60 + "\n\n"
+    return text
+
+def build_short_text(ioc, type, verd, vt_l, ab_l=None):
+    text = f"--- ANÁLISIS DE IOC ---\n"
     text += f"IOC:      {ioc}\n"
     text += f"TIPO:     {type}\n"
     text += f"ESTADO:    {verd.upper()}\n"
@@ -144,16 +137,16 @@ def build_combined_ticket(ioc, type, verd, vt_m, vt_t, vt_s, vt_l, details_dict)
     text += f"EVIDENCIAS:\n"
     text += f"- VirusTotal: {vt_l}\n"
     if ab_l: text += f"- AbuseIPDB:  {ab_l}\n"
-    text += f"--------------------------------------------------"
-    
+    text += "\n" + "-"*60 + "\n\n"
     return text
 
-def render_copy_box_single(text: str, unique_key: str, height: int = 450):
+def render_copy_box(title: str, text: str, unique_key: str, height: int = 400):
+    st.subheader(title)
     escaped_text = html.escape(text)
     component_html = f"""
-    <div style="margin-bottom: 30px; margin-top: 10px;">
-        <textarea id="cb_{unique_key}" readonly style="width: 100%; height: {height}px; padding: 15px; background: #0e1117; color: #fafafa; font-family: monospace; font-size: 13px; border-radius: 5px; border: 1px solid #4a4a4a;">{escaped_text}</textarea>
-        <button onclick="copy_{unique_key}()" style="margin-top: 10px; background: #ff4b4b; color: white; border: none; padding: 10px 25px; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 14px;">Copiar Información Completa</button>
+    <div style="margin-bottom: 20px;">
+        <textarea id="cb_{unique_key}" readonly style="width: 100%; height: {height}px; padding: 10px; background: #0e1117; color: #fafafa; font-family: monospace; font-size: 13px; border-radius: 5px; border: 1px solid #4a4a4a;">{escaped_text}</textarea>
+        <button onclick="copy_{unique_key}()" style="margin-top: 8px; background: #ff4b4b; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold;">Copiar {title}</button>
     </div>
     <script>
     function copy_{unique_key}() {{
@@ -163,14 +156,14 @@ def render_copy_box_single(text: str, unique_key: str, height: int = 450):
     }}
     </script>
     """
-    components.html(component_html, height=height + 100)
+    components.html(component_html, height=height + 80)
 
 # =========================
 # INTERFAZ DE ENTRADA
 # =========================
 col_in, col_btn = st.columns([6, 1])
 with col_in:
-    raw_iocs = st.text_area("Introduce IOCs", key="ioc_input", height=150)
+    raw_iocs = st.text_area("Introduce IOCs (uno por línea)", key="ioc_input", height=150)
 with col_btn:
     st.write(" ")
     st.write(" ")
@@ -178,15 +171,13 @@ with col_btn:
 
 if st.button("Analizar IOC(s)", type="primary", use_container_width=True):
     input_list = list(dict.fromkeys([x.strip() for x in raw_iocs.splitlines() if x.strip()]))
-    
-    if not input_list:
-        st.warning("Por favor, introduce al menos un IOC.")
-        st.stop()
+    if not input_list: st.stop()
 
     summary_rows = []
-    final_texts = []
+    all_internal_text = ""
+    all_short_text = ""
 
-    with st.spinner(f"Analizando {len(input_list)} IOC(s)..."):
+    with st.spinner(f"Procesando {len(input_list)} elementos..."):
         for ioc in input_list:
             t = detect_ioc_type(ioc)
             vt_res = requests.get(f"https://www.virustotal.com/api/v3/{'ip_addresses' if t=='IP' else 'files' if t=='Hash' else 'urls'}/{vt_url_id(ioc) if t=='URL' else ioc}", headers=VT_HEADERS)
@@ -198,6 +189,7 @@ if st.button("Analizar IOC(s)", type="primary", use_container_width=True):
                 vt_m, vt_s, vt_t = stats.get("malicious", 0), stats.get("suspicious", 0), total_engines_from_stats(stats)
 
             details = {}
+            ab_l = None
             vt_l = f"https://www.virustotal.com/gui/{'ip-address' if t=='IP' else 'file' if t=='Hash' else 'url'}/{vt_url_id(ioc) if t=='URL' else ioc}"
 
             if t == "IP":
@@ -207,37 +199,40 @@ if st.button("Analizar IOC(s)", type="primary", use_container_width=True):
                 ab_l = f"https://www.abuseipdb.com/check/{ioc}"
                 verd = get_verdict(vt_m, vt_s, ab_s)
                 c_n = country_name_from_code(v_attr.get("country"))
-                details = {"ab_s": ab_s, "País": c_n, "ASN": v_attr.get("asn", "N/A"), "Proveedor": v_attr.get("as_owner", "N/A"), "ab_l": ab_l}
+                details = {"ab_s": ab_s, "País": c_n, "Proveedor": v_attr.get("as_owner", "N/A"), "ab_l": ab_l}
                 summary_rows.append({"Estado": get_status_icon(verd), "IOC": ioc, "Tipo": "IP", "País": c_n, "Firmado": "N/A", "Veredicto": verd, "VT Malicious": vt_m, "Abuse Score": f"{ab_s}%", "VirusTotal": vt_l, "AbuseIPDB": ab_l})
 
             elif t == "Hash":
                 sig_info = v_attr.get("signature_info", {})
                 firm_txt = "✅ Válida" if sig_info.get("verified") == "Valid" else ("⚠️ No válida" if sig_info else "❌ No")
                 verd = get_verdict(vt_m, vt_s)
-                details = {"Nombre": v_attr.get("meaningful_name", "N/A"), "Tipo": v_attr.get("type_description", "N/A"), "SHA256": v_attr.get("sha256", "N/A")}
+                details = {"Nombre": v_attr.get("meaningful_name", "N/A"), "Tipo": v_attr.get("type_description", "N/A")}
                 summary_rows.append({"Estado": get_status_icon(verd), "IOC": ioc, "Tipo": "Hash", "País": "N/A", "Firmado": firm_txt, "Veredicto": verd, "VT Malicious": vt_m, "Abuse Score": "N/A", "VirusTotal": vt_l, "AbuseIPDB": None})
 
             elif t == "URL":
                 verd = get_verdict(vt_m, vt_s)
-                details = {"URL Final": v_attr.get("url", ioc), "Categorías": str(v_attr.get("categories", "N/A"))}
+                details = {"URL Final": v_attr.get("url", ioc)}
                 summary_rows.append({"Estado": get_status_icon(verd), "IOC": ioc, "Tipo": "URL", "País": "N/A", "Firmado": "N/A", "Veredicto": verd, "VT Malicious": vt_m, "Abuse Score": "N/A", "VirusTotal": vt_l, "AbuseIPDB": None})
-            
-            if t != "Desconocido":
-                final_texts.append(build_combined_ticket(ioc, t, verd, vt_m, vt_t, vt_s, vt_l, details))
+            else: continue
 
-    # RESUMEN GLOBAL
+            # Acumular textos
+            all_internal_text += build_internal_text(ioc, t, verd, vt_m, vt_t, vt_s, vt_l, details)
+            all_short_text += build_short_text(ioc, t, verd, vt_l, ab_l)
+
+    # MOSTRAR TABLA
     st.header("Resumen global")
-    if summary_rows:
-        df = pd.DataFrame(summary_rows)
-        cols_order = ["Estado", "IOC", "Tipo", "País", "Firmado", "Veredicto", "VT Malicious", "Abuse Score", "VirusTotal", "AbuseIPDB"]
-        st.dataframe(df[cols_order], use_container_width=True, hide_index=True, column_config={
-            "VirusTotal": st.column_config.LinkColumn("VirusTotal", display_text="Enlace VT"),
-            "AbuseIPDB": st.column_config.LinkColumn("AbuseIPDB", display_text="Enlace ABUSEIP")
-        })
+    df = pd.DataFrame(summary_rows)
+    st.dataframe(df, use_container_width=True, hide_index=True, column_config={
+        "VirusTotal": st.column_config.LinkColumn("VirusTotal", display_text="Abrir enlace"),
+        "AbuseIPDB": st.column_config.LinkColumn("AbuseIPDB", display_text="Abrir enlace")
+    })
 
+    # MOSTRAR CAJAS DE COPIA (SÓLO 2 CAJAS TOTALES)
     st.markdown("---")
     st.header("Texto para tickets")
     
-    # Renderizar cada bloque de texto unificado
-    for idx, txt in enumerate(final_texts):
-        render_copy_box_single(txt, f"box_{idx}")
+    col1, col2 = st.columns(2)
+    with col1:
+        render_copy_box("Investigación Interna", all_internal_text, "all_internal", height=500)
+    with col2:
+        render_copy_box("Análisis de IOC", all_short_text, "all_short", height=500)
