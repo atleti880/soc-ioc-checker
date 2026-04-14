@@ -161,7 +161,7 @@ Hostname:    {host}
 - AbuseIPDB:  {ab_l}
 --------------------------------------------------"""
 
-def build_ticket_text_hash(ioc, sha, name, type, size, hist, sig, vt_m, vt_t, vt_s, vt_l, verd, obs):
+def build_ticket_text_hash(ioc, sha, name, type, size, sig, vt_m, vt_t, vt_s, vt_l, verd, obs):
     firmado = "SÍ" if sig["is_signed"] else "NO"
     validez = "VÁLIDA" if sig["is_valid"] else "N/A"
     return f"""--- ANÁLISIS DE ARCHIVO (HASH) ---
@@ -298,10 +298,22 @@ if st.button("Analizar IOC(s)", type="primary", use_container_width=True):
     # VISUALIZACIÓN
     st.header("Resumen global")
     df = pd.DataFrame(summary_rows)
+    
+    # Reordenar columnas para que coincida con tu imagen
+    cols_order = ["Estado", "IOC", "Tipo", "País", "Firmado", "Veredicto", "VT Malicious", "Abuse Score", "VirusTotal", "AbuseIPDB"]
+    df = df[cols_order]
+
     st.dataframe(df, use_container_width=True, hide_index=True, column_config={
         "Estado": st.column_config.TextColumn("Estado", width="small"),
-        "VirusTotal": st.column_config.LinkColumn("VirusTotal"),
-        "AbuseIPDB": st.column_config.LinkColumn("AbuseIPDB"),
+        "IOC": st.column_config.TextColumn("IOC", width="medium"),
+        "Tipo": st.column_config.TextColumn("Tipo", width="small"),
+        "País": st.column_config.TextColumn("País", width="small"),
+        "Firmado": st.column_config.TextColumn("Firmado", width="small"),
+        "Veredicto": st.column_config.TextColumn("Veredicto", width="small"),
+        "VT Malicious": st.column_config.NumberColumn("VT Malicious", width="small"),
+        "Abuse Score": st.column_config.TextColumn("Abuse Score", width="small"),
+        "VirusTotal": st.column_config.LinkColumn("VirusTotal", width="medium"),
+        "AbuseIPDB": st.column_config.LinkColumn("AbuseIPDB", width="medium"),
     })
 
     st.markdown("---")
@@ -310,7 +322,7 @@ if st.button("Analizar IOC(s)", type="primary", use_container_width=True):
         if type == "IP":
             txt = build_ticket_text_ip(ioc, d["vt_m"], d["vt_t"], d["vt_s"], d["rep"], d["ab_s"], d["reps"], d["c_n"], d["c_c"], d["as"], d["asn"], d["net"], d["host"], d["vt_l"], d["ab_l"], d["verd"], d["obs"])
         elif type == "Hash":
-            txt = build_ticket_text_hash(ioc, d["sha"], d["name"], d["type"], d["size"], {}, d["sig"], d["vt_m"], d["vt_t"], d["vt_s"], d["vt_l"], d["verd"], d["obs"])
+            txt = build_ticket_text_hash(ioc, d["sha"], d["name"], d["type"], d["size"], d["sig"], d["vt_m"], d["vt_t"], d["vt_s"], d["vt_l"], d["verd"], d["obs"])
         else:
             txt = build_ticket_text_url(ioc, d["final"], d["vt_m"], d["vt_t"], d["vt_s"], d["cats"], d["vt_l"], d["verd"], d["obs"])
         render_copy_box(f"Ticket {type}: {ioc}", txt, escape_key(ioc))
