@@ -89,27 +89,6 @@ def total_engines_from_stats(stats: dict) -> int:
     if not isinstance(stats, dict): return 0
     return sum(v for v in stats.values() if isinstance(v, int))
 
-def format_file_size(size):
-    if not isinstance(size, (int, float)): return str(size)
-    units = ["B", "KB", "MB", "GB", "TB"]
-    size = float(size)
-    for unit in units:
-        if size < 1024 or unit == units[-1]:
-            return f"{int(size)} {unit}" if unit == "B" else f"{size:.2f} {unit}"
-        size /= 1024
-
-def format_unix_timestamp(ts):
-    if ts in (None, "", "N/A"): return "N/A"
-    try:
-        dt = datetime.fromtimestamp(int(ts), tz=timezone.utc)
-        return dt.strftime("%Y-%m-%d %H:%M:%S UTC")
-    except Exception: return str(ts)
-
-def format_categories(categories) -> str:
-    if not categories: return "N/A"
-    if isinstance(categories, dict): return ", ".join(f"{k}: {v}" for k, v in categories.items())
-    return str(categories)
-
 def escape_key(value: str) -> str:
     return re.sub(r"[^a-zA-Z0-9_]", "_", value)
 
@@ -125,10 +104,10 @@ def get_verdict(vt_m=0, vt_s=0, ab_s=0):
     return "Bajo riesgo"
 
 # =========================
-# FORMATOS DE TICKET
+# FORMATOS DE TICKET (Investigación Interna)
 # =========================
 def build_ticket_text_ip(ioc, vt_m, vt_t, vt_s, rep, ab_s, reps, c_n, c_c, as_o, asn, net, host, vt_l, ab_l, verd, obs):
-    return f"""--- DETALLES DEL INDICADOR (IOC) ---
+    return f"""--- INVESTIGACIÓN INTERNA ---
 IOC:         {ioc}
 TIPO:        IP Address
 ESTADO:      {verd.upper()}
@@ -164,7 +143,7 @@ Hostname:    {host}
 def build_ticket_text_hash(ioc, sha, name, type, size, sig, vt_m, vt_t, vt_s, vt_l, verd, obs):
     firmado = "SÍ" if sig["is_signed"] else "NO"
     validez = "VÁLIDA" if sig["is_valid"] else "N/A"
-    return f"""--- ANÁLISIS DE ARCHIVO (HASH) ---
+    return f"""--- INVESTIGACIÓN INTERNA (HASH) ---
 IOC (Hash):  {ioc}
 ESTADO:      {verd.upper()}
 
@@ -189,14 +168,14 @@ Estado:      {validez}
 --------------------------------------------------"""
 
 def build_ticket_text_url(ioc, final, vt_m, vt_t, vt_s, cats, vt_l, verd, obs):
-    return f"""--- ANÁLISIS DE URL ---
+    return f"""--- INVESTIGACIÓN INTERNA (URL) ---
 URL:         {ioc}
 ESTADO:      {verd.upper()}
 
 [1] DETALLES
 --------------------------------------------------
 URL Final:   {final}
-Categoría:   {format_categories(cats)}
+Categoría:   {", ".join(f"{k}: {v}" for k, v in cats.items()) if cats else "N/A"}
 
 [2] REPUTACIÓN
 --------------------------------------------------
@@ -207,13 +186,29 @@ Detecciones: {vt_m}/{vt_t} motores maliciosos
 - VirusTotal: {vt_l}
 --------------------------------------------------"""
 
-def render_copy_box_no_title(text: str, unique_key: str, height: int = 300):
-    # Se ha eliminado el st.subheader() para que no aparezca "Ticket IP"
+# =========================
+# FORMATO DE ANÁLISIS DE IOC (Compacto)
+# =========================
+def build_short_analysis(ioc, type, verd, vt_l, ab_l=None):
+    text = f"--- ANÁLISIS DE IOC ---\n"
+    text += f"IOC:      {ioc}\n"
+    text += f"TIPO:     {type}\n"
+    text += f"ESTADO:    {verd.upper()}\n"
+    text += f"--------------------------------------------------\n"
+    text += f"EVIDENCIAS:\n"
+    text += f"- VirusTotal: {vt_l}\n"
+    if ab_l:
+        text += f"- AbuseIPDB:  {ab_l}\n"
+    text += f"--------------------------------------------------"
+    return text
+
+def render_copy_box(title: str, text: str, unique_key: str, height: int = 250):
+    st.subheader(title)
     escaped_text = html.escape(text)
     component_html = f"""
-    <div style="margin-bottom: 20px; margin-top: 10px;">
+    <div style="margin-bottom: 20px;">
         <textarea id="cb_{unique_key}" readonly style="width: 100%; height: {height}px; padding: 10px; background: #0e1117; color: #fafafa; font-family: monospace; font-size: 13px; border-radius: 5px; border: 1px solid #4a4a4a;">{escaped_text}</textarea>
-        <button onclick="copy_{unique_key}()" style="margin-top: 8px; background: #ff4b4b; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold;">Copiar Portapapeles</button>
+        <button onclick="copy_{unique_key}()" style="margin-top: 8px; background: #ff4b4b; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold;">Copiar {title}</button>
     </div>
     <script>
     function copy_{unique_key}() {{
@@ -270,7 +265,10 @@ if st.button("Analizar IOC(s)", type="primary", use_container_width=True):
                 host = "N/A"
                 try: host = socket.gethostbyaddr(ioc)[0]
                 except: pass
-                ticket_data_list.append(("IP", ioc, {"vt_m": vt_m, "vt_t": vt_t, "vt_s": vt_s, "rep": v_attr.get("reputation", 0), "ab_s": ab_s, "reps": a_data.get("totalReports", 0), "c_n": c_n, "c_c": v_attr.get("country", "N/A"), "as": v_attr.get("as_owner", "N/A"), "asn": v_attr.get("asn", "N/A"), "net": v_attr.get("network", "N/A"), "host": host, "vt_l": vt_l, "ab_l": ab_l, "verd": verd, "obs": "IP analizada."}))
+                
+                internal = build_ticket_text_ip(ioc, vt_m, vt_t, vt_s, v_attr.get("reputation", 0), ab_s, a_data.get("totalReports", 0), c_n, v_attr.get("country", "N/A"), v_attr.get("as_owner", "N/A"), v_attr.get("asn", "N/A"), v_attr.get("network", "N/A"), host, vt_l, ab_l, verd, "IP analizada.")
+                short = build_short_analysis(ioc, "IP Address", verd, vt_l, ab_l)
+                ticket_data_list.append((ioc, internal, short))
 
             elif t == "Hash":
                 sig_info = v_attr.get("signature_info", {})
@@ -284,7 +282,9 @@ if st.button("Analizar IOC(s)", type="primary", use_container_width=True):
                     "VT Malicious": vt_m, "Abuse Score": "N/A", "VirusTotal": vt_l, "AbuseIPDB": None
                 })
                 
-                ticket_data_list.append(("Hash", ioc, {"sha": v_attr.get("sha256", ioc), "name": v_attr.get("meaningful_name", "N/A"), "type": v_attr.get("type_description", "N/A"), "size": v_attr.get("size", 0), "sig": sig, "vt_m": vt_m, "vt_t": vt_t, "vt_s": vt_s, "vt_l": vt_l, "verd": verd, "obs": "Hash analizado."}))
+                internal = build_ticket_text_hash(ioc, v_attr.get("sha256", ioc), v_attr.get("meaningful_name", "N/A"), v_attr.get("type_description", "N/A"), v_attr.get("size", 0), sig, vt_m, vt_t, vt_s, vt_l, verd, "Hash analizado.")
+                short = build_short_analysis(ioc, "Archivo (Hash)", verd, vt_l)
+                ticket_data_list.append((ioc, internal, short))
 
             elif t == "URL":
                 verd = get_verdict(vt_m, vt_s)
@@ -293,36 +293,28 @@ if st.button("Analizar IOC(s)", type="primary", use_container_width=True):
                     "Estado": get_status_icon(verd), "IOC": ioc, "Tipo": "URL", "País": "N/A", "Firmado": "N/A", "Veredicto": verd, 
                     "VT Malicious": vt_m, "Abuse Score": "N/A", "VirusTotal": vt_l, "AbuseIPDB": None
                 })
-                ticket_data_list.append(("URL", ioc, {"final": v_attr.get("url", ioc), "vt_m": vt_m, "vt_t": vt_t, "vt_s": vt_s, "cats": v_attr.get("categories", {}), "vt_l": vt_l, "verd": verd, "obs": "URL analizada."}))
+                
+                internal = build_ticket_text_url(ioc, v_attr.get("url", ioc), vt_m, vt_t, vt_s, v_attr.get("categories", {}), vt_l, verd, "URL analizada.")
+                short = build_short_analysis(ioc, "URL", verd, vt_l)
+                ticket_data_list.append((ioc, internal, short))
 
-    # VISUALIZACIÓN
+    # VISUALIZACIÓN DE TABLA
     st.header("Resumen global")
     df = pd.DataFrame(summary_rows)
     cols_order = ["Estado", "IOC", "Tipo", "País", "Firmado", "Veredicto", "VT Malicious", "Abuse Score", "VirusTotal", "AbuseIPDB"]
-    df = df[cols_order]
-
-    st.dataframe(df, use_container_width=True, hide_index=True, column_config={
-        "Estado": st.column_config.TextColumn("Estado", width="small"),
-        "IOC": st.column_config.TextColumn("IOC", width="medium"),
-        "Tipo": st.column_config.TextColumn("Tipo", width="small"),
-        "País": st.column_config.TextColumn("País", width="small"),
-        "Firmado": st.column_config.TextColumn("Firmado", width="small"),
-        "Veredicto": st.column_config.TextColumn("Veredicto", width="small"),
-        "VT Malicious": st.column_config.NumberColumn("VT Malicious", width="small"),
-        "Abuse Score": st.column_config.TextColumn("Abuse Score", width="small"),
-        "VirusTotal": st.column_config.LinkColumn("VirusTotal", display_text="Enlace Virustotal", width="medium"),
-        "AbuseIPDB": st.column_config.LinkColumn("AbuseIPDB", display_text="Enlace AbuseIP", width="medium"),
+    st.dataframe(df[cols_order], use_container_width=True, hide_index=True, column_config={
+        "VirusTotal": st.column_config.LinkColumn("VirusTotal", display_text="Abrir enlace"),
+        "AbuseIPDB": st.column_config.LinkColumn("AbuseIPDB", display_text="Abrir enlace"),
     })
 
     st.markdown("---")
-    # Título general de la sección
-    st.header("Texto para tickets")
+    st.header("Sección de Tickets")
     
-    for type, ioc, d in ticket_data_list:
-        if type == "IP":
-            txt = build_ticket_text_ip(ioc, d["vt_m"], d["vt_t"], d["vt_s"], d["rep"], d["ab_s"], d["reps"], d["c_n"], d["c_c"], d["as"], d["asn"], d["net"], d["host"], d["vt_l"], d["ab_l"], d["verd"], d["obs"])
-        elif type == "Hash":
-            txt = build_ticket_text_hash(ioc, d["sha"], d["name"], d["type"], d["size"], d["sig"], d["vt_m"], d["vt_t"], d["vt_s"], d["vt_l"], d["verd"], d["obs"])
-        else:
-            txt = build_ticket_text_url(ioc, d["final"], d["vt_m"], d["vt_t"], d["vt_s"], d["cats"], d["vt_l"], d["verd"], d["obs"])
-        render_copy_box_no_title(txt, escape_key(ioc))
+    for ioc_val, internal_txt, short_txt in ticket_data_list:
+        st.markdown(f"### IOC: `{ioc_val}`")
+        col1, col2 = st.columns(2)
+        with col1:
+            render_copy_box("Investigación Interna", internal_txt, f"int_{escape_key(ioc_val)}")
+        with col2:
+            render_copy_box("Análisis de IOC", short_txt, f"short_{escape_key(ioc_val)}")
+        st.markdown("---")
