@@ -1134,7 +1134,7 @@ if process:
                     "Tipo": "URL",
                     "País": country_name,
                     "Veredicto": verdict,
-                    "Firmado": "N/A"),
+                    "Firmado": "N/A",
                     "VT Malicious": vt_malicious,
                     "VT Suspicious": vt_suspicious,
                     "Abuse Score": "N/A",
