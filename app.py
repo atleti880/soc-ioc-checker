@@ -762,7 +762,7 @@ ASN:         {asn}
 Network:     {network}
 Reverse DNS: {hostname}
 
-[3] ANÁLISIS DEL ANALISTA
+[3] OBSERVACIONES
 --------------------------------------------------
 {observations}
 
@@ -838,7 +838,7 @@ Categorías:  {format_categories(categories)}
 VirusTotal:  {vt_malicious}/{vt_total} detecciones
 Sospechosos: {vt_suspicious}
 
-[3] ANÁLISIS Y OBSERVACIONES
+[3] OBSERVACIONES
 --------------------------------------------------
 {observations}
 
