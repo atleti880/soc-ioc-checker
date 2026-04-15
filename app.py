@@ -9,7 +9,6 @@ import streamlit as st
 import streamlit.components.v1 as components
 from urllib.parse import urlparse
 
-# Intentar importar whois de forma segura
 try:
     import whois
     WHOIS_AVAILABLE = True
@@ -27,8 +26,8 @@ ABUSE_HEADERS = {"Key": ABUSE_API, "Accept": "application/json"}
 
 st.set_page_config(page_title="SOC IOC Checker v2.6", page_icon="🛡️", layout="wide")
 
-st.title("🛡️ SOC IOC Checker - Ultra")
-st.caption("Análisis de Inteligencia de Amenazas | VT • AbuseIPDB • Network Context")
+st.title("🛡️ SOC IOC Checker")
+st.caption("Análisis IOC | VT • AbuseIPDB")
 
 # =========================
 # UTILIDADES
@@ -98,13 +97,13 @@ def build_internal_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, whois_t
     text = f"╔════════════════════════════════════════════════════════════╗\n"
     text += f"   INVESTIGACIÓN TÉCNICA SOC - {icon} {verd.upper()}\n"
     text += f"╚════════════════════════════════════════════════════════════╝\n\n"
-    text += f"■ ACTIVO ANALIZADO : {ioc}\n"
+    text += f"■ IOC ANALIZADO : {ioc}\n"
     text += f"■ TIPO DE IOC      : {ioc_type}\n"
     text += f"■ VERDICTO FINAL   : {verd.upper()}\n\n"
     
     text += f"📊 [ REPUTACIÓN Y ANÁLISIS ]\n"
     text += f"--------------------------------------------------\n"
-    text += f"● VirusTotal detection:  [{vt_m}/{vt_t}]\n"
+    text += f"● Detecciones VirusTotal:  [{vt_m}/{vt_t}]\n"
     
     if ioc_type == "IP":
         text += f"● AbuseIPDB Score:      [{details.get('ab_s', 0)}%]\n"
@@ -119,7 +118,7 @@ def build_internal_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, whois_t
         text += f"--------------------------------------------------\n"
         text += f"{whois_text}\n"
         
-    text += f"\n🔗 [ EVIDENCIAS TÉCNICAS ]\n"
+    text += f"\n🔗 [ Enlaces ]\n"
     text += f"--------------------------------------------------\n"
     text += f"URL VT: {vt_l}\n"
     if 'ab_l' in details: text += f"URL AB: {details['ab_l']}\n"
@@ -128,12 +127,12 @@ def build_internal_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, whois_t
 
 def build_analysis_block(ioc, verd, vt_l, ab_l=None):
     icon = get_status_icon(verd)
-    text = f"📢 ANÁLISIS DE SEGURIDAD - {ioc}\n"
+    text = f"📢 ANÁLISIS DE IOC - {ioc}\n"
     text += f"--------------------------------------------------\n"
-    text += f"ESTADO: {icon} {verd.upper()}\n"
+    text += f"ESTADO: {verd.upper()}\n"
     text += f"Se ha verificado la reputación en motores de búsqueda de amenazas.\n"
-    text += f"EVIDENCIA PRINCIPAL: {vt_l}\n"
-    if ab_l: text += f"EVIDENCIA ADICIONAL: {ab_l}\n"
+    text += f"Enlace Virustotal: {vt_l}\n"
+    if ab_l: text += f"Enlace AbuseIP: {ab_l}\n"
     text += "--------------------------------------------------\n\n"
     return text
 
@@ -167,7 +166,7 @@ with c_btn:
     st.write(" ")
     st.button("🧹 Limpiar", on_click=clear_text, use_container_width=True)
 
-if st.button("🚀 ANALIZAR AHORA", type="primary", use_container_width=True):
+if st.button("🚀 ANALIZAR", type="primary", use_container_width=True):
     input_list = list(dict.fromkeys([x.strip() for x in raw_iocs.splitlines() if x.strip()]))
     if not input_list: st.stop()
 
@@ -175,7 +174,7 @@ if st.button("🚀 ANALIZAR AHORA", type="primary", use_container_width=True):
     full_internal = ""
     full_analysis = ""
 
-    with st.spinner("Consultando APIs de seguridad..."):
+    with st.spinner("Analizando..."):
         for ioc in input_list:
             t = detect_ioc_type(ioc)
             if t == "Desconocido": continue
@@ -242,7 +241,7 @@ if st.button("🚀 ANALIZAR AHORA", type="primary", use_container_width=True):
             full_analysis += build_analysis_block(ioc, verd, vt_l, details.get('ab_l'))
 
     # RENDERIZADO DE TABLA
-    st.header("📋 Resultados del Escaneo")
+    st.header("📋 Resultados del Analisis")
     if summary_rows:
         df = pd.DataFrame(summary_rows)
         st.dataframe(df, use_container_width=True, hide_index=True, column_config={
@@ -255,6 +254,6 @@ if st.button("🚀 ANALIZAR AHORA", type="primary", use_container_width=True):
     # RENDERIZADO DE CAJAS
     col_left, col_right = st.columns(2)
     with col_left:
-        render_copy_box("📁 Reporte Técnico (Investigación Interna)", full_internal, "internal_txt")
+        render_copy_box("📁 Investigación Interna", full_internal, "internal_txt")
     with col_right:
-        render_copy_box("✉️ Comunicación SOC (Resumen)", full_analysis, "analysis_txt")
+        render_copy_box("✉️ Analisis IOC", full_analysis, "analysis_txt")
