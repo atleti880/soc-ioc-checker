@@ -28,8 +28,8 @@ ABUSE_HEADERS = {"Key": ABUSE_API, "Accept": "application/json"}
 
 st.set_page_config(page_title="SOC IOC Checker v3.2", page_icon="🛡️", layout="wide")
 
-st.title("🛡️ SOC IOC Checker - Smart Links")
-st.caption("Tablas dinámicas por tipo de IOC con enlaces directos a evidencias")
+st.title("🛡️ SOC IOC Checker")
+st.caption("Analisis de IOC en Virustotal & AbuseIP")
 
 # =========================
 # UTILIDADES
@@ -120,7 +120,7 @@ def build_internal_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, whois_t
 
 def build_analysis_block(ioc, verd, vt_l, ab_l=None):
     icon = get_status_icon(verd)
-    return f"📢 ANÁLISIS IOC - {ioc}\n----------------------------------\nRESULTADO: {icon} {verd.upper()}\nVT: {vt_l}\n" + (f"Abuse: {ab_l}\n" if ab_l else "") + "----------------------------------\n\n"
+    return f"📢 ANÁLISIS IOC - {ioc}\n----------------------------------\nRESULTADO: {verd.upper()}\nVT: {vt_l}\n" + (f"Abuse: {ab_l}\n" if ab_l else "") + "----------------------------------\n\n"
 
 def render_copy_box(title: str, text: str, unique_key: str):
     st.subheader(title)
@@ -151,7 +151,7 @@ if st.button("🚀 Iniciar Análisis", type="primary", use_container_width=True)
     list_ips, list_hashes, list_urls = [], [], []
     full_internal, full_analysis = "", ""
 
-    with st.spinner("Procesando..."):
+    with st.spinner("Analizando..."):
         for ioc in input_list:
             t = detect_ioc_type(ioc)
             if t == "Desconocido": continue
@@ -203,13 +203,13 @@ if st.button("🚀 Iniciar Análisis", type="primary", use_container_width=True)
             full_analysis += build_analysis_block(ioc, verd, vt_l, details.get('ab_l'))
 
     # RENDERIZADO DE TABLAS POR PESTAÑAS
-    st.header("📋 Resultados por Categoría")
+    st.header("📋 IOC Analizados")
     t_ip, t_hash, t_url = st.tabs([f"🌐 IPs ({len(list_ips)})", f"📄 Archivos ({len(list_hashes)})", f"🔗 URLs/Dominios ({len(list_urls)})"])
     
     # Configuración de enlaces para las tablas
     link_config = {
-        "VirusTotal": st.column_config.LinkColumn("VirusTotal", display_text="Ver reporte"),
-        "AbuseIPDB": st.column_config.LinkColumn("AbuseIPDB", display_text="Ver reporte")
+        "VirusTotal": st.column_config.LinkColumn("VirusTotal", display_text="Ver"),
+        "AbuseIPDB": st.column_config.LinkColumn("AbuseIPDB", display_text="Ver")
     }
 
     with t_ip: 
@@ -225,4 +225,4 @@ if st.button("🚀 Iniciar Análisis", type="primary", use_container_width=True)
     st.divider()
     c1, c2 = st.columns(2)
     with c1: render_copy_box("📁 Investigación Interna", full_internal, "int_box")
-    with c2: render_copy_box("✉️ Resumen SOC", full_analysis, "ana_box")
+    with c2: render_copy_box("✉️ Analisis IOC", full_analysis, "ana_box")
