@@ -121,7 +121,7 @@ def build_internal_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, whois_t
 def build_analysis_block(ioc, verd, vt_l, ab_l=None):
     icon = get_status_icon(verd)
     text = f"📢 ANÁLISIS DE IOC - {ioc}\n--------------------------------------------------\n"
-    text += f"RESULTADO: {icon} {verd.upper()}\n"
+    text += f"RESULTADO: {verd.upper()}\n"
     text += f"VirusTotal: {vt_l}\n"
     if ab_l: text += f"AbuseIP: {ab_l}\n"
     text += "--------------------------------------------------\n\n"
