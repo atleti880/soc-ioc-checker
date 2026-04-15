@@ -25,10 +25,10 @@ ABUSE_API = st.secrets["ABUSE_API"]
 VT_HEADERS = {"x-apikey": VT_API}
 ABUSE_HEADERS = {"Key": ABUSE_API, "Accept": "application/json"}
 
-st.set_page_config(page_title="SOC IOC Checker v2.8", page_icon="🛡️", layout="wide")
+st.set_page_config(page_title="SOC IOC Checker v2.9", page_icon="🛡️", layout="wide")
 
-st.title("🛡️ SOC IOC Checker - Full Enriched")
-st.caption("Investigación avanzada con Contexto de Red, Reputación Comunitaria y Forense Rápido")
+st.title("🛡️ SOC IOC Checker")
+st.caption("Análisis de Amenazas | VirusTotal, AbuseIPDB & Contexto de Red")
 
 # =========================
 # UTILIDADES
@@ -72,9 +72,9 @@ def get_whois_info(target):
 def vt_url_id(url: str) -> str:
     return base64.urlsafe_b64encode(url.encode()).decode().strip("=")
 
-def get_verdict(vt_m=0, ab_s=0, community=0):
-    if ab_s >= 80 or vt_m >= 5 or community <= -20: return "Malicioso"
-    if ab_s >= 25 or vt_m >= 1 or community < 0: return "Sospechoso"
+def get_verdict(vt_m=0, ab_s=0):
+    if ab_s >= 80 or vt_m >= 5: return "Malicioso"
+    if ab_s >= 25 or vt_m >= 1: return "Sospechoso"
     return "Bajo riesgo"
 
 def get_status_icon(verdict: str) -> str:
@@ -95,7 +95,6 @@ def build_internal_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, whois_t
     
     text += f"📊 [ REPUTACIÓN Y CONTEXTO ]\n--------------------------------------------------\n"
     text += f"● VirusTotal:       {vt_m}/{vt_t} detecciones\n"
-    text += f"● Community Score:  {details.get('VT_Comm', 0)} (Votos comunidad)\n"
     
     if ioc_type == "IP":
         text += f"● AbuseIPDB Score:  {details.get('ab_s', 0)}%\n"
@@ -146,7 +145,7 @@ def render_copy_box(title: str, text: str, unique_key: str):
     components.html(comp_html, height=550)
 
 # =========================
-# LÓGICA PRINCIPAL
+# LÓGICA DE STREAMLIT
 # =========================
 if "ioc_input" not in st.session_state: st.session_state["ioc_input"] = ""
 def clear_text(): st.session_state["ioc_input"] = ""
@@ -159,7 +158,7 @@ with c_cl:
     st.write(" ")
     st.button("🧹 Limpiar", on_click=clear_text, use_container_width=True)
 
-if st.button("🚀 Iniciar Análisis Completo", type="primary", use_container_width=True):
+if st.button("🚀 Iniciar Análisis", type="primary", use_container_width=True):
     input_list = list(dict.fromkeys([x.strip() for x in raw_iocs.splitlines() if x.strip()]))
     if not input_list: st.stop()
 
@@ -167,24 +166,23 @@ if st.button("🚀 Iniciar Análisis Completo", type="primary", use_container_wi
     full_internal = ""
     full_analysis = ""
 
-    with st.spinner("Enriqueciendo datos de múltiples fuentes..."):
+    with st.spinner("Investigando activos..."):
         for ioc in input_list:
             t = detect_ioc_type(ioc)
             if t == "Desconocido": continue
             
-            # VirusTotal API
             vt_id = vt_url_id(ioc) if t == "URL" else ioc
             vt_res = requests.get(f"https://www.virustotal.com/api/v3/{'ip_addresses' if t=='IP' else 'files' if t=='Hash' else 'urls'}/{vt_id}", headers=VT_HEADERS)
             v_attr = vt_res.json().get("data", {}).get("attributes", {}) if vt_res.status_code == 200 else {}
             
             vt_m = v_attr.get("last_analysis_stats", {}).get("malicious", 0)
             vt_t = sum(v_attr.get("last_analysis_stats", {}).values())
-            vt_comm = v_attr.get("reputation", 0)
             vt_l = f"https://www.virustotal.com/gui/{'ip-address' if t=='IP' else 'file' if t=='Hash' else 'url'}/{vt_id}"
             
-            details = {"VT_Comm": vt_comm}
+            details = {}
             whois_info = ""
             pais_full = "N/A"
+            isp = "N/A"
 
             if t == "IP":
                 a_res = requests.get("https://api.abuseipdb.com/api/v2/check", headers=ABUSE_HEADERS, params={"ipAddress": ioc, "verbose": True})
@@ -192,17 +190,17 @@ if st.button("🚀 Iniciar Análisis Completo", type="primary", use_container_wi
                 
                 ab_s = a_data.get("abuseConfidenceScore", 0)
                 pais_full = get_full_country_name(a_data.get("countryCode", "N/A"))
+                isp = a_data.get("isp", "N/A")
                 h_list = a_data.get("hostnames", [])
                 
+                ab_l = f"https://www.abuseipdb.com/check/{ioc}"
                 details.update({
-                    "ab_s": ab_s, "ab_l": f"https://www.abuseipdb.com/check/{ioc}",
-                    "Hostname": ", ".join(h_list) if h_list else "N/A",
-                    "CountryName": pais_full, "ISP": a_data.get("isp", "N/A"),
-                    "UsageType": a_data.get("usageType", "N/A")
+                    "ab_s": ab_s, "ab_l": ab_l, "Hostname": ", ".join(h_list) if h_list else "N/A",
+                    "CountryName": pais_full, "ISP": isp, "UsageType": a_data.get("usageType", "N/A")
                 })
-                verd = get_verdict(vt_m, ab_s, vt_comm)
+                verd = get_verdict(vt_m, ab_s)
                 whois_info, _ = get_whois_info(ioc)
-                summary_rows.append({"Estado": get_status_icon(verd), "IOC": ioc, "Tipo": t, "País": pais_full, "Veredicto": verd, "VT": f"{vt_m}/{vt_t}", "Abuse": f"{ab_s}%", "VirusTotal": vt_l, "AbuseIPDB": details['ab_l']})
+                summary_rows.append({"Estado": get_status_icon(verd), "IOC": ioc, "Tipo": t, "País": pais_full, "ISP": isp, "Veredicto": verd, "VT": f"{vt_m}/{vt_t}", "Abuse": f"{ab_s}%", "VirusTotal": vt_l, "AbuseIPDB": ab_l})
 
             elif t == "Hash":
                 sig = v_attr.get("signature_info", {})
@@ -212,24 +210,24 @@ if st.button("🚀 Iniciar Análisis Completo", type="primary", use_container_wi
                     "FileName": v_attr.get("meaningful_name", "N/A"),
                     "Firmado": firmado
                 })
-                verd = get_verdict(vt_m, 0, vt_comm)
-                summary_rows.append({"Estado": get_status_icon(verd), "IOC": ioc, "Tipo": t, "País": "N/A", "Veredicto": verd, "VT": f"{vt_m}/{vt_t}", "VirusTotal": vt_l, "AbuseIPDB": None})
+                verd = get_verdict(vt_m, 0)
+                summary_rows.append({"Estado": get_status_icon(verd), "IOC": ioc, "Tipo": t, "País": "N/A", "ISP": "N/A", "Veredicto": verd, "VT": f"{vt_m}/{vt_t}", "VirusTotal": vt_l, "AbuseIPDB": None})
 
             elif t == "URL":
                 details.update({"Category": v_attr.get("categories", {}).get("Forcepoint", "N/A")})
-                verd = get_verdict(vt_m, 0, vt_comm)
+                verd = get_verdict(vt_m, 0)
                 whois_info, p_code = get_whois_info(ioc)
                 pais_full = get_full_country_name(p_code)
-                summary_rows.append({"Estado": get_status_icon(verd), "IOC": ioc, "Tipo": t, "País": pais_full, "Veredicto": verd, "VT": f"{vt_m}/{vt_t}", "VirusTotal": vt_l, "AbuseIPDB": None})
+                summary_rows.append({"Estado": get_status_icon(verd), "IOC": ioc, "Tipo": t, "País": pais_full, "ISP": "N/A", "Veredicto": verd, "VT": f"{vt_m}/{vt_t}", "VirusTotal": vt_l, "AbuseIPDB": None})
 
             full_internal += build_internal_block(ioc, t, verd, vt_m, vt_t, vt_l, details, whois_info)
             full_analysis += build_analysis_block(ioc, verd, vt_l, details.get('ab_l'))
 
-    st.header("📋 Tabla Resumen")
+    st.header("📋 Resumen de Análisis")
     if summary_rows:
         st.dataframe(pd.DataFrame(summary_rows), use_container_width=True, hide_index=True, column_config={
-            "VirusTotal": st.column_config.LinkColumn("VT", display_text="Link"),
-            "AbuseIPDB": st.column_config.LinkColumn("Abuse", display_text="Link")
+            "VirusTotal": st.column_config.LinkColumn("VT", display_text="Ver"),
+            "AbuseIPDB": st.column_config.LinkColumn("Abuse", display_text="Ver")
         })
 
     st.divider()
