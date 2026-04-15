@@ -120,7 +120,7 @@ def build_internal_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, whois_t
 
 def build_analysis_block(ioc, verd, vt_l, ab_l=None):
     icon = get_status_icon(verd)
-    return f"📢 ANÁLISIS IOC - {ioc}\n----------------------------------\nRESULTADO: {verd.upper()}\nVT: {vt_l}\n" + (f"Abuse: {ab_l}\n" if ab_l else "") + "----------------------------------\n\n"
+    return f" ANÁLISIS IOC - {ioc}\n----------------------------------\nRESULTADO: {verd.upper()}\nVT: {vt_l}\n" + (f"Abuse: {ab_l}\n" if ab_l else "") + "----------------------------------\n\n"
 
 def render_copy_box(title: str, text: str, unique_key: str):
     st.subheader(title)
