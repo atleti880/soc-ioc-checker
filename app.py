@@ -29,7 +29,7 @@ ABUSE_HEADERS = {"Key": ABUSE_API, "Accept": "application/json"}
 st.set_page_config(page_title="SOC IOC Checker v3.4", page_icon="🛡️", layout="wide")
 
 st.title("🛡️ SOC IOC Checker")
-st.caption("Análisis de IOC enriquecido para Investigación y Reportes")
+st.caption("Análisis de IOC  VirusTotal & AbuseIP")
 
 # =========================
 # UTILIDADES
@@ -87,8 +87,8 @@ def get_status_icon(verdict: str) -> str:
 # =========================
 def build_context_block(ioc_type, vt_m, vt_t, details):
     """Genera el bloque de Reputación y Contexto para ambos reportes"""
-    text = f"📊 [ REPUTACIÓN Y CONTEXTO ]\n--------------------------------------------------\n"
-    text += f"● VirusTotal:       {vt_m}/{vt_t} detecciones\n"
+    text = f"[ REPUTACIÓN Y CONTEXTO ]\n--------------------------------------------------\n"
+    text += f"● VirusTotal:  {vt_m}/{vt_t} detecciones\n"
     if "ab_s" in details: text += f"● AbuseIPDB Score:  {details['ab_s']}%\n"
     
     if ioc_type == "IP" or "Resolved_IP" in details:
@@ -99,7 +99,7 @@ def build_context_block(ioc_type, vt_m, vt_t, details):
         text += f"● Hostname:         {details.get('Hostname', 'N/A')}\n"
     elif ioc_type == "Hash":
         text += f"● Tipo Archivo:     {details.get('FileType', 'N/A')}\n"
-        text += f"● Nombre visto:     {details.get('FileName', 'N/A')}\n"
+        text += f"● Nombre:     {details.get('FileName', 'N/A')}\n"
         text += f"● Firma Digital:    {details.get('Firmado', 'N/A')}\n"
     elif ioc_type == "URL":
         text += f"● Categoría:        {details.get('Category', 'N/A')}\n"
@@ -108,7 +108,7 @@ def build_context_block(ioc_type, vt_m, vt_t, details):
 def build_internal_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, whois_text):
     icon = get_status_icon(verd)
     text = f"╔════════════════════════════════════════════════════════════╗\n"
-    text += f"   ANALISIS INTERNO SOC - {icon} {verd.upper()}\n"
+    text += f"   ANALISIS INTERNO SOC - {verd.upper()}\n"
     text += f"╚════════════════════════════════════════════════════════════╝\n\n"
     text += f"● IOC ANALIZADO: {ioc}\n"
     text += f"● TIPO:          {ioc_type}\n\n"
@@ -116,23 +116,23 @@ def build_internal_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, whois_t
     text += build_context_block(ioc_type, vt_m, vt_t, details)
     
     if whois_text:
-        text += f"\n📋 [ WHOIS / REGISTRO ]\n--------------------------------------------------\n{whois_text}\n"
+        text += f"\n [ WHOIS / REGISTRO ]\n--------------------------------------------------\n{whois_text}\n"
         
-    text += f"\n🔗 [ ENLACES ]\n--------------------------------------------------\n- VT: {vt_l}\n"
+    text += f"\n [ ENLACES ]\n--------------------------------------------------\n- VT: {vt_l}\n"
     if 'ab_l' in details: text += f"- Abuse: {details['ab_l']}\n"
     text += "\n" + "═"*60 + "\n\n"
     return text
 
 def build_analysis_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details):
     icon = get_status_icon(verd)
-    text = f"📢 ANÁLISIS IOC - {ioc}\n"
+    text = f" ANÁLISIS IOC - {ioc}\n"
     text += f"--------------------------------------------------\n"
-    text += f"RESULTADO: {icon} {verd.upper()}\n\n"
+    text += f"RESULTADO: {verd.upper()}\n\n"
     
     # Insertamos el mismo recuadro de reputación y contexto
     text += build_context_block(ioc_type, vt_m, vt_t, details)
     
-    text += f"\n🔗 [ EVIDENCIAS ]\n--------------------------------------------------\n- VT: {vt_l}\n"
+    text += f"\n [ ENLACES ]\n--------------------------------------------------\n- VT: {vt_l}\n"
     if 'ab_l' in details: text += f"- Abuse: {details['ab_l']}\n"
     text += "--------------------------------------------------\n\n"
     return text
@@ -238,5 +238,5 @@ if st.button("🚀 Iniciar Análisis", type="primary", use_container_width=True)
 
     st.divider()
     c1, c2 = st.columns(2)
-    with c1: render_copy_box("📁 Investigación Interna", full_internal, "int_box")
-    with c2: render_copy_box("✉️ Análisis de IOC", full_analysis, "ana_box")
+    with c1: render_copy_box("Investigación Interna", full_internal, "int_box")
+    with c2: render_copy_box("Análisis de IOC", full_analysis, "ana_box")
