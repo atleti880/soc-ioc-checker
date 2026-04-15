@@ -58,7 +58,7 @@ def detect_ioc_type(value: str) -> str:
     return "Desconocido"
 
 def get_whois_info(target):
-    if not WHOIS_AVAILABLE: return "⚠️ WHOIS no disponible.", "N/A"
+    if not WHOIS_AVAILABLE: return "WHOIS no disponible.", "N/A"
     try:
         if not is_ip(target):
             target = urlparse(target if "://" in target else "https://"+target).netloc
@@ -157,9 +157,9 @@ with c_in: raw_iocs = st.text_area("IOCs a analizar", key="ioc_input", height=10
 with c_cl: 
     st.write(" ")
     st.write(" ")
-    st.button("🧹 Limpiar", on_click=clear_text, use_container_width=True)
+    st.button("Limpiar", on_click=clear_text, use_container_width=True)
 
-if st.button("🚀 Iniciar Análisis", type="primary", use_container_width=True):
+if st.button("Iniciar Análisis", type="primary", use_container_width=True):
     input_list = list(dict.fromkeys([x.strip() for x in raw_iocs.splitlines() if x.strip()]))
     if not input_list: st.stop()
 
@@ -194,7 +194,7 @@ if st.button("🚀 Iniciar Análisis", type="primary", use_container_width=True)
 
             elif t == "Hash":
                 sig = v_attr.get("signature_info", {})
-                firm = "✅ Válida" if sig.get("verified") == "Valid" else ("⚠️ No válida" if sig else "❌ No")
+                firm = "Válida" if sig.get("verified") == "Valid" else ("No válida" if sig else "No")
                 verd = get_verdict(vt_m, 0)
                 details.update({"FileType": v_attr.get("type_description", "N/A"), "FileName": v_attr.get("meaningful_name", "N/A"), "Firmado": firm})
                 list_hashes.append({"Estado": get_status_icon(verd), "Hash": ioc, "Nombre": details['FileName'], "Firmado": firm, "VT": f"{vt_m}/{vt_t}", "VirusTotal": vt_l})
