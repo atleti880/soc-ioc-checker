@@ -9,7 +9,6 @@ import streamlit as st
 import streamlit.components.v1 as components
 from urllib.parse import urlparse
 
-# Intentar importar whois de forma segura
 try:
     import whois
     WHOIS_AVAILABLE = True
@@ -28,7 +27,7 @@ ABUSE_HEADERS = {"Key": ABUSE_API, "Accept": "application/json"}
 st.set_page_config(page_title="SOC IOC Checker v2.9", page_icon="🛡️", layout="wide")
 
 st.title("🛡️ SOC IOC Checker")
-st.caption("Análisis de Amenazas | VirusTotal, AbuseIPDB & Contexto de Red")
+st.caption("Análisis de IOC | VirusTotal & AbuseIPDB")
 
 # =========================
 # UTILIDADES
@@ -87,7 +86,7 @@ def get_status_icon(verdict: str) -> str:
 def build_internal_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, whois_text):
     icon = get_status_icon(verd)
     text = f"╔════════════════════════════════════════════════════════════╗\n"
-    text += f"   INFORME DE INVESTIGACIÓN INTERNA - {icon} {verd.upper()}\n"
+    text += f"   Analisis Interno - {icon} {verd.upper()}\n"
     text += f"╚════════════════════════════════════════════════════════════╝\n\n"
     text += f"● IOC ANALIZADO: {ioc}\n"
     text += f"● TIPO:          {ioc_type}\n"
@@ -114,7 +113,7 @@ def build_internal_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, whois_t
     if whois_text:
         text += f"\n📋 [ WHOIS / REGISTRO ]\n--------------------------------------------------\n{whois_text}\n"
         
-    text += f"\n🔗 [ EVIDENCIAS ]\n--------------------------------------------------\n- VT: {vt_l}\n"
+    text += f"\n🔗 [ ENLACES ]\n--------------------------------------------------\n- VT: {vt_l}\n"
     if 'ab_l' in details: text += f"- Abuse: {details['ab_l']}\n"
     text += "\n" + "═"*60 + "\n\n"
     return text
@@ -123,8 +122,8 @@ def build_analysis_block(ioc, verd, vt_l, ab_l=None):
     icon = get_status_icon(verd)
     text = f"📢 ANÁLISIS DE IOC - {ioc}\n--------------------------------------------------\n"
     text += f"RESULTADO: {icon} {verd.upper()}\n"
-    text += f"EVIDENCIA VT: {vt_l}\n"
-    if ab_l: text += f"EVIDENCIA ABUSE: {ab_l}\n"
+    text += f"VirusTotal: {vt_l}\n"
+    if ab_l: text += f"AbuseIP: {ab_l}\n"
     text += "--------------------------------------------------\n\n"
     return text
 
@@ -166,7 +165,7 @@ if st.button("🚀 Iniciar Análisis", type="primary", use_container_width=True)
     full_internal = ""
     full_analysis = ""
 
-    with st.spinner("Investigando activos..."):
+    with st.spinner("Analizando IOC..."):
         for ioc in input_list:
             t = detect_ioc_type(ioc)
             if t == "Desconocido": continue
