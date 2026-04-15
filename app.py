@@ -26,10 +26,10 @@ ABUSE_API = st.secrets["ABUSE_API"]
 VT_HEADERS = {"x-apikey": VT_API}
 ABUSE_HEADERS = {"Key": ABUSE_API, "Accept": "application/json"}
 
-st.set_page_config(page_title="SOC IOC Checker v3.2", page_icon="🛡️", layout="wide")
+st.set_page_config(page_title="SOC IOC Checker v3.3", page_icon="🛡️", layout="wide")
 
 st.title("🛡️ SOC IOC Checker")
-st.caption("Analisis de IOC en Virustotal & AbuseIP")
+st.caption("Análisis de IOC en Virustotal & AbuseIP")
 
 # =========================
 # UTILIDADES
@@ -88,12 +88,12 @@ def get_status_icon(verdict: str) -> str:
 def build_internal_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, whois_text):
     icon = get_status_icon(verd)
     text = f"╔════════════════════════════════════════════════════════════╗\n"
-    text += f"   ANALISIS INTERNO SOC - {icon} {verd.upper()}\n"
+    text += f"   ANALISIS INTERNO SOC - {verd.upper()}\n"
     text += f"╚════════════════════════════════════════════════════════════╝\n\n"
     text += f"● IOC ANALIZADO: {ioc}\n"
     text += f"● TIPO:          {ioc_type}\n\n"
     
-    text += f"📊 [ REPUTACIÓN Y CONTEXTO ]\n--------------------------------------------------\n"
+    text += f" [ REPUTACIÓN Y CONTEXTO ]\n--------------------------------------------------\n"
     text += f"● VirusTotal:       {vt_m}/{vt_t} detecciones\n"
     if "ab_s" in details: text += f"● AbuseIPDB Score:  {details['ab_s']}%\n"
     
@@ -111,16 +111,27 @@ def build_internal_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, whois_t
         text += f"● Categoría:        {details.get('Category', 'N/A')}\n"
     
     if whois_text:
-        text += f"\n📋 [ WHOIS / REGISTRO ]\n--------------------------------------------------\n{whois_text}\n"
+        text += f"\n [ WHOIS / REGISTRO ]\n--------------------------------------------------\n{whois_text}\n"
         
-    text += f"\n🔗 [ ENLACES ]\n--------------------------------------------------\n- VT: {vt_l}\n"
+    text += f"\n [ ENLACES ]\n--------------------------------------------------\n- VT: {vt_l}\n"
     if 'ab_l' in details: text += f"- Abuse: {details['ab_l']}\n"
     text += "\n" + "═"*60 + "\n\n"
     return text
 
-def build_analysis_block(ioc, verd, vt_l, ab_l=None):
+def build_analysis_block(ioc, verd, vt_m, vt_t, vt_l, ab_s=None, ab_l=None):
     icon = get_status_icon(verd)
-    return f" ANÁLISIS IOC - {ioc}\n----------------------------------\nRESULTADO: {verd.upper()}\nVT: {vt_l}\n" + (f"Abuse: {ab_l}\n" if ab_l else "") + "----------------------------------\n\n"
+    text = f" ANÁLISIS IOC - {ioc}\n"
+    text += f"----------------------------------\n"
+    text += f"RESULTADO: {icon} {verd.upper()}\n\n"
+    text += f" REPUTACIÓN:\n"
+    text += f"- VirusTotal: {vt_m}/{vt_t} detecciones\n"
+    if ab_s is not None:
+        text += f"- AbuseIPDB Score: {ab_s}%\n"
+    text += f"\n ENLACES:\n"
+    text += f"- VirusTotal: {vt_l}\n"
+    if ab_l: text += f"- AbuseIP: {ab_l}\n"
+    text += "----------------------------------\n\n"
+    return text
 
 def render_copy_box(title: str, text: str, unique_key: str):
     st.subheader(title)
@@ -142,9 +153,9 @@ with c_in: raw_iocs = st.text_area("IOCs a analizar", key="ioc_input", height=10
 with c_cl: 
     st.write(" ")
     st.write(" ")
-    st.button("🧹 Limpiar", on_click=clear_text, use_container_width=True)
+    st.button("Limpiar", on_click=clear_text, use_container_width=True)
 
-if st.button("🚀 Iniciar Análisis", type="primary", use_container_width=True):
+if st.button("Iniciar Análisis", type="primary", use_container_width=True):
     input_list = list(dict.fromkeys([x.strip() for x in raw_iocs.splitlines() if x.strip()]))
     if not input_list: st.stop()
 
@@ -164,11 +175,13 @@ if st.button("🚀 Iniciar Análisis", type="primary", use_container_width=True)
             vt_l = f"https://www.virustotal.com/gui/{'ip-address' if t=='IP' else 'file' if t=='Hash' else 'url'}/{vt_id}"
             
             details, whois_info = {}, ""
+            ab_score_val = None
 
             if t == "IP":
                 a_res = requests.get("https://api.abuseipdb.com/api/v2/check", headers=ABUSE_HEADERS, params={"ipAddress": ioc})
                 a_data = a_res.json().get("data", {}) if a_res.status_code == 200 else {}
                 ab_s = a_data.get("abuseConfidenceScore", 0)
+                ab_score_val = ab_s
                 pais = get_full_country_name(a_data.get("countryCode", "N/A"))
                 isp = a_data.get("isp", "N/A")
                 verd = get_verdict(vt_m, ab_s)
@@ -191,6 +204,7 @@ if st.button("🚀 Iniciar Análisis", type="primary", use_container_width=True)
                     a_res = requests.get("https://api.abuseipdb.com/api/v2/check", headers=ABUSE_HEADERS, params={"ipAddress": rip})
                     a_data = a_res.json().get("data", {}) if a_res.status_code == 200 else {}
                     ab_s = a_data.get("abuseConfidenceScore", 0)
+                    ab_score_val = ab_s
                     ab_l = f"https://www.abuseipdb.com/check/{rip}"
                     details.update({"ab_s": ab_s, "ab_l": ab_l, "Resolved_IP": rip, "ISP": a_data.get("isp", "N/A")})
                 except: ab_s, ab_l = 0, None
@@ -200,7 +214,7 @@ if st.button("🚀 Iniciar Análisis", type="primary", use_container_width=True)
                 list_urls.append({"Estado": get_status_icon(verd), "URL/Dominio": ioc, "Categoría": details['Category'], "IP Resuelta": details.get('Resolved_IP', 'N/A'), "VT": f"{vt_m}/{vt_t}", "VirusTotal": vt_l, "AbuseIPDB": ab_l})
 
             full_internal += build_internal_block(ioc, t, verd, vt_m, vt_t, vt_l, details, whois_info)
-            full_analysis += build_analysis_block(ioc, verd, vt_l, details.get('ab_l'))
+            full_analysis += build_analysis_block(ioc, verd, vt_m, vt_t, vt_l, ab_score_val, details.get('ab_l'))
 
     # RENDERIZADO DE TABLAS POR PESTAÑAS
     st.header("📋 IOC Analizados")
@@ -224,5 +238,5 @@ if st.button("🚀 Iniciar Análisis", type="primary", use_container_width=True)
 
     st.divider()
     c1, c2 = st.columns(2)
-    with c1: render_copy_box("📁 Investigación Interna", full_internal, "int_box")
-    with c2: render_copy_box("✉️ Analisis IOC", full_analysis, "ana_box")
+    with c1: render_copy_box("Investigación Interna", full_internal, "int_box")
+    with c2: render_copy_box("Analisis IOC", full_analysis, "ana_box")
