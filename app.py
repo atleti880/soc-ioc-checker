@@ -26,10 +26,10 @@ ABUSE_API = st.secrets["ABUSE_API"]
 VT_HEADERS = {"x-apikey": VT_API}
 ABUSE_HEADERS = {"Key": ABUSE_API, "Accept": "application/json"}
 
-st.set_page_config(page_title="SOC IOC Checker v3.1", page_icon="🛡️", layout="wide")
+st.set_page_config(page_title="SOC IOC Checker v3.2", page_icon="🛡️", layout="wide")
 
-st.title("🛡️ SOC IOC Checker - Smart Tables")
-st.caption("Triaje especializado con vistas dinámicas por tipo de IOC")
+st.title("🛡️ SOC IOC Checker - Smart Links")
+st.caption("Tablas dinámicas por tipo de IOC con enlaces directos a evidencias")
 
 # =========================
 # UTILIDADES
@@ -148,7 +148,6 @@ if st.button("🚀 Iniciar Análisis", type="primary", use_container_width=True)
     input_list = list(dict.fromkeys([x.strip() for x in raw_iocs.splitlines() if x.strip()]))
     if not input_list: st.stop()
 
-    # Listas para separar por tipo
     list_ips, list_hashes, list_urls = [], [], []
     full_internal, full_analysis = "", ""
 
@@ -173,16 +172,17 @@ if st.button("🚀 Iniciar Análisis", type="primary", use_container_width=True)
                 pais = get_full_country_name(a_data.get("countryCode", "N/A"))
                 isp = a_data.get("isp", "N/A")
                 verd = get_verdict(vt_m, ab_s)
-                details.update({"ab_s": ab_s, "ab_l": f"https://www.abuseipdb.com/check/{ioc}", "ISP": isp, "CountryName": pais, "UsageType": a_data.get("usageType", "N/A"), "Hostname": ", ".join(a_data.get("hostnames", [])) or "N/A"})
+                ab_l = f"https://www.abuseipdb.com/check/{ioc}"
+                details.update({"ab_s": ab_s, "ab_l": ab_l, "ISP": isp, "CountryName": pais, "UsageType": a_data.get("usageType", "N/A"), "Hostname": ", ".join(a_data.get("hostnames", [])) or "N/A"})
                 whois_info, _ = get_whois_info(ioc)
-                list_ips.append({"Estado": get_status_icon(verd), "IP": ioc, "País": pais, "ISP": isp, "Uso": details['UsageType'], "Abuse": f"{ab_s}%", "VT": f"{vt_m}/{vt_t}"})
+                list_ips.append({"Estado": get_status_icon(verd), "IP": ioc, "País": pais, "ISP": isp, "Abuse": f"{ab_s}%", "VT": f"{vt_m}/{vt_t}", "VirusTotal": vt_l, "AbuseIPDB": ab_l})
 
             elif t == "Hash":
                 sig = v_attr.get("signature_info", {})
                 firm = "✅ Válida" if sig.get("verified") == "Valid" else ("⚠️ No válida" if sig else "❌ No")
                 verd = get_verdict(vt_m, 0)
                 details.update({"FileType": v_attr.get("type_description", "N/A"), "FileName": v_attr.get("meaningful_name", "N/A"), "Firmado": firm})
-                list_hashes.append({"Estado": get_status_icon(verd), "Hash": ioc, "Nombre": details['FileName'], "Tipo": details['FileType'], "Firmado": firm, "VT": f"{vt_m}/{vt_t}"})
+                list_hashes.append({"Estado": get_status_icon(verd), "Hash": ioc, "Nombre": details['FileName'], "Firmado": firm, "VT": f"{vt_m}/{vt_t}", "VirusTotal": vt_l})
 
             elif t == "URL":
                 try:
@@ -191,12 +191,13 @@ if st.button("🚀 Iniciar Análisis", type="primary", use_container_width=True)
                     a_res = requests.get("https://api.abuseipdb.com/api/v2/check", headers=ABUSE_HEADERS, params={"ipAddress": rip})
                     a_data = a_res.json().get("data", {}) if a_res.status_code == 200 else {}
                     ab_s = a_data.get("abuseConfidenceScore", 0)
-                    details.update({"ab_s": ab_s, "ab_l": f"https://www.abuseipdb.com/check/{rip}", "Resolved_IP": rip, "ISP": a_data.get("isp", "N/A")})
-                except: ab_s = 0
+                    ab_l = f"https://www.abuseipdb.com/check/{rip}"
+                    details.update({"ab_s": ab_s, "ab_l": ab_l, "Resolved_IP": rip, "ISP": a_data.get("isp", "N/A")})
+                except: ab_s, ab_l = 0, None
                 verd = get_verdict(vt_m, ab_s)
                 whois_info, p_code = get_whois_info(ioc)
                 details.update({"Category": v_attr.get("categories", {}).get("Forcepoint", "N/A"), "CountryName": get_full_country_name(p_code)})
-                list_urls.append({"Estado": get_status_icon(verd), "URL/Dominio": ioc, "Categoría": details['Category'], "IP Resuelta": details.get('Resolved_IP', 'N/A'), "Abuse (IP)": f"{ab_s}%", "VT": f"{vt_m}/{vt_t}"})
+                list_urls.append({"Estado": get_status_icon(verd), "URL/Dominio": ioc, "Categoría": details['Category'], "IP Resuelta": details.get('Resolved_IP', 'N/A'), "VT": f"{vt_m}/{vt_t}", "VirusTotal": vt_l, "AbuseIPDB": ab_l})
 
             full_internal += build_internal_block(ioc, t, verd, vt_m, vt_t, vt_l, details, whois_info)
             full_analysis += build_analysis_block(ioc, verd, vt_l, details.get('ab_l'))
@@ -205,14 +206,20 @@ if st.button("🚀 Iniciar Análisis", type="primary", use_container_width=True)
     st.header("📋 Resultados por Categoría")
     t_ip, t_hash, t_url = st.tabs([f"🌐 IPs ({len(list_ips)})", f"📄 Archivos ({len(list_hashes)})", f"🔗 URLs/Dominios ({len(list_urls)})"])
     
+    # Configuración de enlaces para las tablas
+    link_config = {
+        "VirusTotal": st.column_config.LinkColumn("VirusTotal", display_text="Ver reporte"),
+        "AbuseIPDB": st.column_config.LinkColumn("AbuseIPDB", display_text="Ver reporte")
+    }
+
     with t_ip: 
-        if list_ips: st.dataframe(pd.DataFrame(list_ips), use_container_width=True, hide_index=True)
+        if list_ips: st.dataframe(pd.DataFrame(list_ips), use_container_width=True, hide_index=True, column_config=link_config)
         else: st.info("No se analizaron IPs.")
     with t_hash:
-        if list_hashes: st.dataframe(pd.DataFrame(list_hashes), use_container_width=True, hide_index=True)
+        if list_hashes: st.dataframe(pd.DataFrame(list_hashes), use_container_width=True, hide_index=True, column_config=link_config)
         else: st.info("No se analizaron archivos.")
     with t_url:
-        if list_urls: st.dataframe(pd.DataFrame(list_urls), use_container_width=True, hide_index=True)
+        if list_urls: st.dataframe(pd.DataFrame(list_urls), use_container_width=True, hide_index=True, column_config=link_config)
         else: st.info("No se analizaron URLs.")
 
     st.divider()
