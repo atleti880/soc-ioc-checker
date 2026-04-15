@@ -28,10 +28,10 @@ ABUSE_API = st.secrets["ABUSE_API"]
 VT_HEADERS = {"x-apikey": VT_API}
 ABUSE_HEADERS = {"Key": ABUSE_API, "Accept": "application/json"}
 
-st.set_page_config(page_title="SOC IOC Checker v2.1", page_icon="🛡️", layout="wide")
+st.set_page_config(page_title="SOC IOC Checker v2.2", page_icon="🛡️", layout="wide")
 
 st.title("🛡️ SOC IOC Checker")
-st.caption("Análisis de amenazas con reporte para tickets y tabla completa")
+st.caption("Investigación de IPs, URLs y Hashes con reporte para tickets")
 
 # =========================
 # LÓGICA DE LIMPIEZA
@@ -68,8 +68,7 @@ def detect_ioc_type(value: str) -> str:
     return "Desconocido"
 
 def get_whois_info(target):
-    if not WHOIS_AVAILABLE:
-        return "⚠️ Error: Librería 'python-whois' no instalada."
+    if not WHOIS_AVAILABLE: return "⚠️ Error: Librería 'python-whois' no instalada."
     try:
         if not is_ip(target):
             target = urlparse(normalize_url(target)).netloc
@@ -98,15 +97,8 @@ def get_status_icon(verdict: str) -> str:
     return icons.get(verdict, "⚪")
 
 # =========================
-# PLANTILLAS DE COMUNICACIÓN
+# PLANTILLAS DE REPORTE
 # =========================
-def get_recommendations(verdict):
-    if verdict == "Malicioso":
-        return "- 🛑 BLOQUEO INMEDIATO: Añadir a lista negra en Firewall/EDR.\n- 🔍 INVESTIGAR: Revisar logs en busca de conexiones previas."
-    elif verdict == "Sospechoso":
-        return "- 🛡️ MONITORIZACIÓN: Mantener vigilancia activa sobre este activo.\n- 🕵️ ANÁLISIS: Realizar búsqueda proactiva en el SIEM."
-    return "- ✅ NINGUNA: No se requiere acción inmediata.\n- 📁 ARCHIVAR: Cerrar como lícito."
-
 def build_internal_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, whois_text):
     icon = get_status_icon(verd)
     text = f"╔════════════════════════════════════════════════════════════╗\n"
@@ -115,12 +107,19 @@ def build_internal_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, whois_t
     text += f"● IOC ANALIZADO: {ioc}\n"
     text += f"● TIPO:          {ioc_type}\n"
     text += f"● ESTADO:        {verd.upper()}\n\n"
+    
     text += f"📊 [ REPUTACIÓN ]\n--------------------------------------------------\n"
     text += f"VirusTotal:    {vt_m}/{vt_t}\n"
     if 'ab_s' in details: text += f"AbuseIPDB:     {details['ab_s']}%\n"
-    if 'Hostname' in details: text += f"Hostname:      {details['Hostname']}\n"
-    if whois_text: text += f"\n📋 [ WHOIS ]\n--------------------------------------------------\n{whois_text}\n"
-    text += f"\n⚡ [ ACCIONES ]\n--------------------------------------------------\n{get_recommendations(verd)}\n"
+    
+    # Datos de Red/AbuseIPDB
+    if ioc_type == "IP":
+        text += f"Domain Name:   {details.get('Domain', 'N/A')}\n"
+        text += f"Hostname:      {details.get('Hostname', 'N/A')}\n"
+    
+    if whois_text:
+        text += f"\n📋 [ WHOIS ]\n--------------------------------------------------\n{whois_text}\n"
+        
     text += f"\n🔗 [ EVIDENCIAS ]\n--------------------------------------------------\n- VT: {vt_l}\n"
     if 'ab_l' in details: text += f"- Abuse: {details['ab_l']}\n"
     text += "\n" + "═"*60 + "\n\n"
@@ -156,7 +155,7 @@ def render_copy_box(title: str, text: str, unique_key: str):
 # =========================
 col1, col2 = st.columns([5, 1])
 with col1:
-    raw_iocs = st.text_area("Lista de IOCs", key="ioc_input", height=100)
+    raw_iocs = st.text_area("Introduce IOCs", key="ioc_input", height=100)
 with col2:
     st.write(" ")
     st.write(" ")
@@ -170,7 +169,7 @@ if st.button("🚀 Iniciar Análisis", type="primary", use_container_width=True)
     full_internal = ""
     full_analysis = ""
 
-    with st.spinner("Consultando fuentes..."):
+    with st.spinner("Procesando datos..."):
         for ioc in input_list:
             t = detect_ioc_type(ioc)
             if t == "Desconocido": continue
@@ -189,15 +188,21 @@ if st.button("🚀 Iniciar Análisis", type="primary", use_container_width=True)
             firmado = "N/A"
 
             if t == "IP":
-                a_res = requests.get("https://api.abuseipdb.com/api/v2/check", headers=ABUSE_HEADERS, params={"ipAddress": ioc})
+                a_res = requests.get("https://api.abuseipdb.com/api/v2/check", headers=ABUSE_HEADERS, params={"ipAddress": ioc, "verbose": True})
                 a_data = a_res.json().get("data", {}) if a_res.status_code == 200 else {}
+                
                 ab_s = a_data.get("abuseConfidenceScore", 0)
-                ab_h = a_data.get("domainName", "N/A")
                 ab_l = f"https://www.abuseipdb.com/check/{ioc}"
+                
+                # Obtener Domain Name y Hostname (puede ser una lista)
+                domain = a_data.get("domainName", "N/A")
+                hostnames_list = a_data.get("hostnames", [])
+                hostnames_str = ", ".join(hostnames_list) if hostnames_list else "N/A"
+                
                 verd = get_verdict(vt_m, 0, ab_s)
-                details = {"ab_s": ab_s, "ab_l": ab_l, "Hostname": ab_h}
+                details = {"ab_s": ab_s, "ab_l": ab_l, "Domain": domain, "Hostname": hostnames_str}
                 whois_info = get_whois_info(ioc)
-                summary_rows.append({"Estado": get_status_icon(verd), "IOC": ioc, "Tipo": t, "Firmado": firmado, "Veredicto": verd, "VT Malicious": f"{vt_m}/{vt_t}", "Abuse Score": f"{ab_s}%", "VirusTotal": vt_l, "AbuseIPDB": ab_l})
+                summary_rows.append({"Estado": get_status_icon(verd), "IOC": ioc, "Tipo": t, "Firmado": "N/A", "Veredicto": verd, "VT Malicious": f"{vt_m}/{vt_t}", "Abuse Score": f"{ab_s}%", "VirusTotal": vt_l, "AbuseIPDB": ab_l})
 
             elif t == "Hash":
                 sig_info = v_attr.get("signature_info", {})
@@ -208,18 +213,23 @@ if st.button("🚀 Iniciar Análisis", type="primary", use_container_width=True)
             elif t == "URL":
                 verd = get_verdict(vt_m, 0)
                 whois_info = get_whois_info(ioc)
-                summary_rows.append({"Estado": get_status_icon(verd), "IOC": ioc, "Tipo": t, "Firmado": firmado, "Veredicto": verd, "VT Malicious": f"{vt_m}/{vt_t}", "Abuse Score": "N/A", "VirusTotal": vt_l, "AbuseIPDB": None})
+                summary_rows.append({"Estado": get_status_icon(verd), "IOC": ioc, "Tipo": t, "Firmado": "N/A", "Veredicto": verd, "VT Malicious": f"{vt_m}/{vt_t}", "Abuse Score": "N/A", "VirusTotal": vt_l, "AbuseIPDB": None})
 
             full_internal += build_internal_block(ioc, t, verd, vt_m, vt_t, vt_l, details, whois_info)
             full_analysis += build_analysis_block(ioc, verd, vt_l, details.get('ab_l'))
 
+    # Tabla de Resumen
     st.header("📋 Resumen")
-    st.dataframe(pd.DataFrame(summary_rows), use_container_width=True, hide_index=True, column_config={
-        "VirusTotal": st.column_config.LinkColumn("VirusTotal", display_text="Abrir VT"),
-        "AbuseIPDB": st.column_config.LinkColumn("AbuseIPDB", display_text="Abrir Abuse")
-    })
+    if summary_rows:
+        df = pd.DataFrame(summary_rows)
+        st.dataframe(df, use_container_width=True, hide_index=True, column_config={
+            "VirusTotal": st.column_config.LinkColumn("VirusTotal", display_text="Abrir VT"),
+            "AbuseIPDB": st.column_config.LinkColumn("AbuseIPDB", display_text="Abrir Abuse")
+        })
 
     st.divider()
+    
+    # Bloques de Texto
     c1, c2 = st.columns(2)
     with c1: render_copy_box("📁 Investigación Interna", full_internal, "int_box")
     with c2: render_copy_box("✉️ Análisis de IOC", full_analysis, "ana_box")
