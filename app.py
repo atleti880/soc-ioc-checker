@@ -2,6 +2,7 @@ import base64
 import html
 import ipaddress
 import re
+import socket
 import requests
 import pandas as pd
 import pycountry
@@ -9,6 +10,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 from urllib.parse import urlparse
 
+# Intento de importación de WHOIS
 try:
     import whois
     WHOIS_AVAILABLE = True
@@ -24,10 +26,10 @@ ABUSE_API = st.secrets["ABUSE_API"]
 VT_HEADERS = {"x-apikey": VT_API}
 ABUSE_HEADERS = {"Key": ABUSE_API, "Accept": "application/json"}
 
-st.set_page_config(page_title="SOC IOC Checker v2.9", page_icon="🛡️", layout="wide")
+st.set_page_config(page_title="SOC IOC Checker v3.0", page_icon="🛡️", layout="wide")
 
 st.title("🛡️ SOC IOC Checker")
-st.caption("Análisis de IOC | VirusTotal & AbuseIPDB")
+st.caption("Análisis Inteligente: VirusTotal, AbuseIPDB (IPs y Dominios) & Contexto de Red")
 
 # =========================
 # UTILIDADES
@@ -95,9 +97,12 @@ def build_internal_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, whois_t
     text += f"📊 [ REPUTACIÓN Y CONTEXTO ]\n--------------------------------------------------\n"
     text += f"● VirusTotal:       {vt_m}/{vt_t} detecciones\n"
     
-    if ioc_type == "IP":
+    if "ab_s" in details:
         text += f"● AbuseIPDB Score:  {details.get('ab_s', 0)}%\n"
-        text += f"● Uso de la IP:     {details.get('UsageType', 'N/A')}\n"
+    
+    if ioc_type == "IP" or "Resolved_IP" in details:
+        if "Resolved_IP" in details: text += f"● IP Resuelta:      {details['Resolved_IP']}\n"
+        text += f"● Uso detectado:    {details.get('UsageType', 'N/A')}\n"
         text += f"● Proveedor (ISP):  {details.get('ISP', 'N/A')}\n"
         text += f"● País:             {details.get('CountryName', 'N/A')}\n"
         text += f"● Hostname:         {details.get('Hostname', 'N/A')}\n"
@@ -151,7 +156,7 @@ def clear_text(): st.session_state["ioc_input"] = ""
 
 c_in, c_cl = st.columns([5, 1])
 with c_in:
-    raw_iocs = st.text_area("Introduce IOCs", key="ioc_input", height=100)
+    raw_iocs = st.text_area("Introduce IOCs (IP, Hash, URL)", key="ioc_input", height=100)
 with c_cl:
     st.write(" ")
     st.write(" ")
@@ -165,11 +170,12 @@ if st.button("🚀 Iniciar Análisis", type="primary", use_container_width=True)
     full_internal = ""
     full_analysis = ""
 
-    with st.spinner("Analizando IOC..."):
+    with st.spinner("Investigando indicadores..."):
         for ioc in input_list:
             t = detect_ioc_type(ioc)
             if t == "Desconocido": continue
             
+            # 1. Consulta VirusTotal
             vt_id = vt_url_id(ioc) if t == "URL" else ioc
             vt_res = requests.get(f"https://www.virustotal.com/api/v3/{'ip_addresses' if t=='IP' else 'files' if t=='Hash' else 'urls'}/{vt_id}", headers=VT_HEADERS)
             v_attr = vt_res.json().get("data", {}).get("attributes", {}) if vt_res.status_code == 200 else {}
@@ -180,53 +186,63 @@ if st.button("🚀 Iniciar Análisis", type="primary", use_container_width=True)
             
             details = {}
             whois_info = ""
-            pais_full = "N/A"
-            isp = "N/A"
+            pais_f, isp, ab_s, firm_txt = "N/A", "N/A", 0, "N/A"
 
+            # 2. Lógica por tipo de IOC
             if t == "IP":
                 a_res = requests.get("https://api.abuseipdb.com/api/v2/check", headers=ABUSE_HEADERS, params={"ipAddress": ioc, "verbose": True})
                 a_data = a_res.json().get("data", {}) if a_res.status_code == 200 else {}
                 
                 ab_s = a_data.get("abuseConfidenceScore", 0)
-                pais_full = get_full_country_name(a_data.get("countryCode", "N/A"))
+                pais_f = get_full_country_name(a_data.get("countryCode", "N/A"))
                 isp = a_data.get("isp", "N/A")
-                h_list = a_data.get("hostnames", [])
-                
                 ab_l = f"https://www.abuseipdb.com/check/{ioc}"
+                
                 details.update({
-                    "ab_s": ab_s, "ab_l": ab_l, "Hostname": ", ".join(h_list) if h_list else "N/A",
-                    "CountryName": pais_full, "ISP": isp, "UsageType": a_data.get("usageType", "N/A")
+                    "ab_s": ab_s, "ab_l": ab_l, "ISP": isp, "CountryName": pais_f,
+                    "UsageType": a_data.get("usageType", "N/A"), "Hostname": ", ".join(a_data.get("hostnames", [])) or "N/A"
                 })
                 verd = get_verdict(vt_m, ab_s)
                 whois_info, _ = get_whois_info(ioc)
-                summary_rows.append({"Estado": get_status_icon(verd), "IOC": ioc, "Tipo": t, "País": pais_full, "ISP": isp, "Veredicto": verd, "VT": f"{vt_m}/{vt_t}", "Abuse": f"{ab_s}%", "VirusTotal": vt_l, "AbuseIPDB": ab_l})
+                summary_rows.append({"Estado": get_status_icon(verd), "IOC": ioc, "Tipo": t, "País": pais_f, "ISP": isp, "Firmado": "N/A", "Veredicto": verd, "VT": f"{vt_m}/{vt_t}", "Abuse": f"{ab_s}%", "VirusTotal": vt_l, "AbuseIPDB": ab_l})
 
             elif t == "Hash":
                 sig = v_attr.get("signature_info", {})
-                firmado = "✅ Válida" if sig.get("verified") == "Valid" else ("⚠️ No válida" if sig else "❌ No")
+                firm_txt = "✅ Válida" if sig.get("verified") == "Valid" else ("⚠️ No válida" if sig else "❌ No")
                 details.update({
                     "FileType": v_attr.get("type_description", "N/A"),
                     "FileName": v_attr.get("meaningful_name", "N/A"),
-                    "Firmado": firmado
+                    "Firmado": firm_txt
                 })
                 verd = get_verdict(vt_m, 0)
-                summary_rows.append({"Estado": get_status_icon(verd), "IOC": ioc, "Tipo": t, "País": "N/A", "ISP": "N/A", "Veredicto": verd, "VT": f"{vt_m}/{vt_t}", "VirusTotal": vt_l, "AbuseIPDB": None})
+                summary_rows.append({"Estado": get_status_icon(verd), "IOC": ioc, "Tipo": t, "País": "N/A", "ISP": "N/A", "Firmado": firm_txt, "Veredicto": verd, "VT": f"{vt_m}/{vt_t}", "Abuse": "N/A", "VirusTotal": vt_l, "AbuseIPDB": None})
 
             elif t == "URL":
+                # Resolución de DNS para AbuseIPDB (como en la web)
+                try:
+                    domain = urlparse(ioc if "://" in ioc else "http://"+ioc).netloc
+                    resolved_ip = socket.gethostbyname(domain)
+                    a_res = requests.get("https://api.abuseipdb.com/api/v2/check", headers=ABUSE_HEADERS, params={"ipAddress": resolved_ip})
+                    a_data = a_res.json().get("data", {}) if a_res.status_code == 200 else {}
+                    ab_s = a_data.get("abuseConfidenceScore", 0)
+                    isp = a_data.get("isp", "N/A")
+                    details.update({"ab_s": ab_s, "ab_l": f"https://www.abuseipdb.com/check/{resolved_ip}", "Resolved_IP": resolved_ip, "ISP": isp})
+                except: resolved_ip = None
+
                 details.update({"Category": v_attr.get("categories", {}).get("Forcepoint", "N/A")})
-                verd = get_verdict(vt_m, 0)
                 whois_info, p_code = get_whois_info(ioc)
-                pais_full = get_full_country_name(p_code)
-                summary_rows.append({"Estado": get_status_icon(verd), "IOC": ioc, "Tipo": t, "País": pais_full, "ISP": "N/A", "Veredicto": verd, "VT": f"{vt_m}/{vt_t}", "VirusTotal": vt_l, "AbuseIPDB": None})
+                pais_f = get_full_country_name(p_code)
+                verd = get_verdict(vt_m, ab_s)
+                summary_rows.append({"Estado": get_status_icon(verd), "IOC": ioc, "Tipo": t, "País": pais_f, "ISP": isp, "Firmado": "N/A", "Veredicto": verd, "VT": f"{vt_m}/{vt_t}", "Abuse": f"{ab_s}%" if resolved_ip else "N/A", "VirusTotal": vt_l, "AbuseIPDB": details.get('ab_l')})
 
             full_internal += build_internal_block(ioc, t, verd, vt_m, vt_t, vt_l, details, whois_info)
             full_analysis += build_analysis_block(ioc, verd, vt_l, details.get('ab_l'))
 
-    st.header("📋 Resumen de Análisis")
+    st.header("📋 Resumen de la Investigación")
     if summary_rows:
         st.dataframe(pd.DataFrame(summary_rows), use_container_width=True, hide_index=True, column_config={
-            "VirusTotal": st.column_config.LinkColumn("VT", display_text="Ver"),
-            "AbuseIPDB": st.column_config.LinkColumn("Abuse", display_text="Ver")
+            "VirusTotal": st.column_config.LinkColumn("VT", display_text="Enlace"),
+            "AbuseIPDB": st.column_config.LinkColumn("Abuse", display_text="Enlace")
         })
 
     st.divider()
