@@ -197,7 +197,7 @@ if st.button("Iniciar Análisis", type="primary", use_container_width=True):
                 firm = "Válida" if sig.get("verified") == "Valid" else ("No válida" if sig else "No")
                 verd = get_verdict(vt_m, 0)
                 details.update({"FileType": v_attr.get("type_description", "N/A"), "FileName": v_attr.get("meaningful_name", "N/A"), "Firmado": firm})
-                list_hashes.append({"Estado": get_status_icon(verd), "Hash": ioc, "Nombre": details['FileName'], "Firmado": firm, "VT": f"{vt_m}/{vt_t}", "VirusTotal": vt_l})
+                list_hashes.append({"Estado": get_status_icon(verd), "Hash": ioc, "Nombre": details['FileName'], "Firmado": firm, "VirusTotal": f"{vt_m}/{vt_t}", "VirusTotal": vt_l})
 
             elif t == "URL":
                 try:
@@ -212,7 +212,7 @@ if st.button("Iniciar Análisis", type="primary", use_container_width=True):
                 verd = get_verdict(vt_m, ab_s)
                 whois_info, p_code = get_whois_info(ioc)
                 details.update({"Category": v_attr.get("categories", {}).get("Forcepoint", "N/A"), "CountryName": get_full_country_name(p_code)})
-                list_urls.append({"Estado": get_status_icon(verd), "URL/Dominio": ioc, "Categoría": details['Category'], "IP Resuelta": details.get('Resolved_IP', 'N/A'), "VT": f"{vt_m}/{vt_t}", "VirusTotal": vt_l, "AbuseIPDB": ab_l})
+                list_urls.append({"Estado": get_status_icon(verd), "URL/Dominio": ioc, "Categoría": details['Category'], "IP Resuelta": details.get('Resolved_IP', 'N/A'), "VirusTotal": f"{vt_m}/{vt_t}", "VirusTotal": vt_l, "AbuseIPDB": ab_l})
 
             full_internal += build_internal_block(ioc, t, verd, vt_m, vt_t, vt_l, details, whois_info)
             full_analysis += build_analysis_block(ioc, t, verd, vt_m, vt_t, vt_l, details)
