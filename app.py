@@ -118,7 +118,7 @@ def build_internal_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, whois_t
     if whois_text:
         text += f"\n [ WHOIS / REGISTRO ]\n--------------------------------------------------\n{whois_text}\n"
         
-    text += f"\n [ ENLACES ]\n--------------------------------------------------\n- VT: {vt_l}\n"
+    text += f"\n [ ENLACES ]\n--------------------------------------------------\n- VirusTotal: {vt_l}\n"
     if 'ab_l' in details: text += f"- Abuse: {details['ab_l']}\n"
     text += "\n" + "═"*60 + "\n\n"
     return text
@@ -132,8 +132,8 @@ def build_analysis_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details):
     # Insertamos el mismo recuadro de reputación y contexto
     text += build_context_block(ioc_type, vt_m, vt_t, details)
     
-    text += f"\n [ ENLACES ]\n--------------------------------------------------\n- VT: {vt_l}\n"
-    if 'ab_l' in details: text += f"- Abuse: {details['ab_l']}\n"
+    text += f"\n [ ENLACES ]\n--------------------------------------------------\n- VirusTotal: {vt_l}\n"
+    if 'ab_l' in details: text += f"- AbuseIP: {details['ab_l']}\n"
     text += "--------------------------------------------------\n\n"
     return text
 
