@@ -90,71 +90,66 @@ def get_status_icon(verdict: str) -> str:
     return icons.get(verdict, "❓")
 
 # =========================
-# CONSTRUCCIÓN DE REPORTES
+# CONSTRUCCIÓN DE REPORTES (MARKDOWN PARA ITOP)
 # =========================
 def build_context_block(ioc_type, vt_m, vt_t, details, found_vt):
-    text = f"[ REPUTACIÓN Y CONTEXTO ]\n--------------------------------------------------\n"
+    text = "### 📊 Reputación y Contexto\n"
+    text += "| Fuente | Estado / Detecciones |\n| :--- | :--- |\n"
     if not found_vt:
-        text += f"● VirusTotal:       IOC NO ENCONTRADO EN BASE DE DATOS\n"
+        text += "| VirusTotal | **NO ENCONTRADO** |\n"
     else:
-        text += f"● VirusTotal:       {vt_m}/{vt_t} detecciones\n"
+        text += f"| VirusTotal | **{vt_m}/{vt_t}** detecciones |\n"
+    if "ab_s" in details:
+        text += f"| AbuseIPDB | Score: **{details['ab_s']}%** |\n"
     
-    if "ab_s" in details: text += f"● AbuseIPDB Score:  {details['ab_s']}%\n"
-    
+    text += "\n#### Detalles Técnicos\n"
     if ioc_type == "IP" or "Resolved_IP" in details:
-        if "Resolved_IP" in details: text += f"● IP Resuelta:      {details['Resolved_IP']}\n"
-        text += f"● Uso detectado:    {details.get('UsageType', 'N/A')}\n"
-        text += f"● Proveedor (ISP):  {details.get('ISP', 'N/A')}\n"
-        text += f"● País:             {details.get('CountryName', 'N/A')}\n"
-        text += f"● Hostname:         {details.get('Hostname', 'N/A')}\n"
+        text += f"- **IP Resuelta:** {details.get('Resolved_IP', 'N/A')}\n"
+        text += f"- **Uso:** {details.get('UsageType', 'N/A')}\n"
+        text += f"- **ISP:** {details.get('ISP', 'N/A')}\n"
+        text += f"- **País:** {details.get('CountryName', 'N/A')}\n"
+        text += f"- **Hostname:** {details.get('Hostname', 'N/A')}\n"
     elif ioc_type == "Hash":
-        text += f"● Tipo Archivo:     {details.get('FileType', 'N/A')}\n"
-        text += f"● Nombre visto:     {details.get('FileName', 'N/A')}\n"
-        text += f"● Firma Digital:    {details.get('Firmado', 'N/A')}\n"
+        text += f"- **Tipo:** {details.get('FileType', 'N/A')}\n"
+        text += f"- **Nombre:** {details.get('FileName', 'N/A')}\n"
+        text += f"- **Firma:** {details.get('Firmado', 'N/A')}\n"
     elif ioc_type == "URL":
-        text += f"● Categoría:        {details.get('Category', 'N/A')}\n"
+        text += f"- **Categoría:** {details.get('Category', 'N/A')}\n"
     return text
 
 def build_internal_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, whois_text, found_vt):
-    icon = get_status_icon(verd)
-    text = f"╔════════════════════════════════════════════════════════════╗\n"
-    text += f"   ANALISIS INTERNO SOC - {verd.upper()}\n"
-    text += f"╚════════════════════════════════════════════════════════════╝\n\n"
-    text += f"● IOC ANALIZADO: {ioc}\n"
-    text += f"● TIPO:          {ioc_type}\n\n"
-    
+    text = f"## 🛡️ Análisis Interno SOC - {verd.upper()}\n"
+    text += f"- **IOC:** `{ioc}`\n"
+    text += f"- **Tipo:** {ioc_type}\n\n"
     text += build_context_block(ioc_type, vt_m, vt_t, details, found_vt)
-    
-    if whois_text:
-        text += f"\n[ WHOIS / REGISTRO ]\n--------------------------------------------------\n{whois_text}\n"
-        
-    text += f"\n[ ENLACES ]\n--------------------------------------------------\n- VT: {vt_l}\n"
-    if 'ab_l' in details: text += f"- Abuse: {details['ab_l']}\n"
-    text += "\n" + "═"*60 + "\n\n"
+    if whois_text and whois_text != "WHOIS no disponible.":
+        text += f"\n#### 🔍 Información WHOIS\n```text\n{whois_text}\n```\n"
+    text += f"\n#### 🔗 Enlaces de Investigación\n"
+    text += f"- [VirusTotal]({vt_l})\n"
+    if 'ab_l' in details: text += f"- [AbuseIPDB]({details['ab_l']})\n"
+    text += "\n---\n"
     return text
 
 def build_analysis_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, found_vt):
-    icon = get_status_icon(verd)
-    text = f"ANÁLISIS IOC - {ioc}\n"
-    text += f"--------------------------------------------------\n"
-    text += f"RESULTADO: {verd.upper()}\n\n"
+    text = f"## 🔎 Reporte de IOC: {ioc}\n"
+    text += f"**Veredicto:** {verd.upper()} {get_status_icon(verd)}\n\n"
     text += build_context_block(ioc_type, vt_m, vt_t, details, found_vt)
-    text += f"\n[ ENLACES ]\n--------------------------------------------------\n- VT: {vt_l}\n"
-    if 'ab_l' in details: text += f"- Abuse: {details['ab_l']}\n"
-    text += "--------------------------------------------------\n\n"
+    text += f"\n**Enlaces de consulta:** [VT]({vt_l})"
+    if 'ab_l' in details: text += f" | [AbuseIPDB]({details['ab_l']})"
+    text += "\n\n---\n"
     return text
 
 def render_copy_box(title: str, text: str, unique_key: str):
     st.subheader(title)
     escaped_text = html.escape(text)
     comp_html = f"""
-    <textarea id="{unique_key}" readonly style="width: 100%; height: 400px; padding: 15px; background: #0b0e14; color: #00ff41; font-family: monospace; border-radius: 8px; border: 1px solid #2d333b;">{escaped_text}</textarea>
+    <textarea id="{unique_key}" readonly style="width: 100%; height: 400px; padding: 15px; background: #0b0e14; color: #00ff41; font-family: monospace; border-radius: 8px; border: 1px solid #2d333b;">{text}</textarea>
     <button onclick="navigator.clipboard.writeText(document.getElementById('{unique_key}').value)" style="margin-top: 10px; background: #238636; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: bold;">Copiar {title}</button>
     """
     components.html(comp_html, height=480)
 
 # =========================
-# LÓGICA PRINCIPAL
+# LÓGICA PRINCIPAL (RESTO DEL FLUJO)
 # =========================
 if "ioc_input" not in st.session_state: st.session_state["ioc_input"] = ""
 def clear_text(): st.session_state["ioc_input"] = ""
@@ -217,7 +212,6 @@ if st.button("Iniciar Análisis", type="primary", use_container_width=True):
                 if v_res.status_code == 404: verd = "No encontrado"
                 elif v_res.status_code != 200: verd = "Error API"
                 else: verd = get_verdict(vt_m, 0, found_vt)
-                
                 details.update({"FileType": v_attr.get("type_description", "N/A"), "FileName": v_attr.get("meaningful_name", "N/A"), "Firmado": firm if found_vt else "N/A"})
                 list_hashes.append({"Estado": get_status_icon(verd), "Hash": ioc, "Nombre": details['FileName'], "Firmado": details['Firmado'], "VT": f"{vt_m}/{vt_t}" if found_vt else "No encontrado", "VirusTotal": vt_l})
 
@@ -232,11 +226,9 @@ if st.button("Iniciar Análisis", type="primary", use_container_width=True):
                     ab_l = f"https://www.abuseipdb.com/check/{rip}"
                     details.update({"ab_s": ab_s, "ab_l": ab_l, "Resolved_IP": rip, "ISP": a_data.get("isp", "N/A")})
                 except: pass
-                
                 if not found_vt and ab_s == 0: verd = "No encontrado"
                 elif v_res.status_code != 200 and v_res.status_code != 404: verd = "Error API"
                 else: verd = get_verdict(vt_m, ab_s, found_vt)
-                
                 whois_info, p_code = get_whois_info(ioc)
                 details.update({"Category": v_attr.get("categories", {}).get("Forcepoint", "N/A"), "CountryName": get_full_country_name(p_code)})
                 list_urls.append({"Estado": get_status_icon(verd), "URL/Dominio": ioc, "Categoría": details['Category'], "IP Resuelta": details.get('Resolved_IP', 'N/A'), "VT": f"{vt_m}/{vt_t}" if found_vt else "No encontrado", "VirusTotal": vt_l, "AbuseIPDB": ab_l})
@@ -244,10 +236,8 @@ if st.button("Iniciar Análisis", type="primary", use_container_width=True):
             full_internal += build_internal_block(ioc, t, verd, vt_m, vt_t, vt_l, details, whois_info, found_vt)
             full_analysis += build_analysis_block(ioc, t, verd, vt_m, vt_t, vt_l, details, found_vt)
 
-    # RENDERIZADO DE TABLAS
     st.header("📋 IOC Analizados")
     t_ip, t_hash, t_url = st.tabs([f"🌐 IPs ({len(list_ips)})", f"📄 Archivos ({len(list_hashes)})", f"🔗 URLs/Dominios ({len(list_urls)})"])
-    
     link_config = {"VirusTotal": st.column_config.LinkColumn("VirusTotal", display_text="Ver"), "AbuseIPDB": st.column_config.LinkColumn("AbuseIPDB", display_text="Ver")}
 
     with t_ip: 
