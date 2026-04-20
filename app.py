@@ -90,58 +90,60 @@ def get_status_icon(verdict: str) -> str:
     return icons.get(verdict, "❓")
 
 # =========================
-# CONSTRUCCIÓN DE REPORTES (MARKDOWN PARA ITOP)
+# CONSTRUCCIÓN DE REPORTES (TEXTO PLANO)
 # =========================
 def build_context_block(ioc_type, vt_m, vt_t, details, found_vt):
-    text = "### 📊 Reputación y Contexto\n"
-    text += "| Fuente | Estado / Detecciones |\n| :--- | :--- |\n"
+    text = "REPUTACION Y CONTEXTO\n"
+    text += "----------------------------------------\n"
     if not found_vt:
-        text += "| VirusTotal | **NO ENCONTRADO** |\n"
+        text += "VirusTotal: NO ENCONTRADO\n"
     else:
-        text += f"| VirusTotal | **{vt_m}/{vt_t}** detecciones |\n"
+        text += f"VirusTotal: {vt_m}/{vt_t} detecciones\n"
     if "ab_s" in details:
-        text += f"| AbuseIPDB | Score: **{details['ab_s']}%** |\n"
+        text += f"AbuseIPDB: Score {details['ab_s']}%\n"
     
-    text += "\n#### Detalles Técnicos\n"
+    text += "\nDETALLES TECNICOS\n"
+    text += "----------------------------------------\n"
     if ioc_type == "IP" or "Resolved_IP" in details:
-        text += f"- **IP Resuelta:** {details.get('Resolved_IP', 'N/A')}\n"
-        text += f"- **Uso:** {details.get('UsageType', 'N/A')}\n"
-        text += f"- **ISP:** {details.get('ISP', 'N/A')}\n"
-        text += f"- **País:** {details.get('CountryName', 'N/A')}\n"
-        text += f"- **Hostname:** {details.get('Hostname', 'N/A')}\n"
+        text += f"IP Resuelta: {details.get('Resolved_IP', 'N/A')}\n"
+        text += f"Uso: {details.get('UsageType', 'N/A')}\n"
+        text += f"ISP: {details.get('ISP', 'N/A')}\n"
+        text += f"Pais: {details.get('CountryName', 'N/A')}\n"
+        text += f"Hostname: {details.get('Hostname', 'N/A')}\n"
     elif ioc_type == "Hash":
-        text += f"- **Tipo:** {details.get('FileType', 'N/A')}\n"
-        text += f"- **Nombre:** {details.get('FileName', 'N/A')}\n"
-        text += f"- **Firma:** {details.get('Firmado', 'N/A')}\n"
+        text += f"Tipo: {details.get('FileType', 'N/A')}\n"
+        text += f"Nombre: {details.get('FileName', 'N/A')}\n"
+        text += f"Firma: {details.get('Firmado', 'N/A')}\n"
     elif ioc_type == "URL":
-        text += f"- **Categoría:** {details.get('Category', 'N/A')}\n"
+        text += f"Categoria: {details.get('Category', 'N/A')}\n"
     return text
 
 def build_internal_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, whois_text, found_vt):
-    text = f"## 🛡️ Análisis Interno SOC - {verd.upper()}\n"
-    text += f"- **IOC:** `{ioc}`\n"
-    text += f"- **Tipo:** {ioc_type}\n\n"
+    text = f"ANALISIS INTERNO SOC - {verd.upper()}\n"
+    text += "========================================\n"
+    text += f"IOC: {ioc}\n"
+    text += f"Tipo: {ioc_type}\n\n"
     text += build_context_block(ioc_type, vt_m, vt_t, details, found_vt)
     if whois_text and whois_text != "WHOIS no disponible.":
-        text += f"\n#### 🔍 Información WHOIS\n```text\n{whois_text}\n```\n"
-    text += f"\n#### 🔗 Enlaces de Investigación\n"
-    text += f"- [VirusTotal]({vt_l})\n"
-    if 'ab_l' in details: text += f"- [AbuseIPDB]({details['ab_l']})\n"
-    text += "\n---\n"
+        text += f"\nINFORMACION WHOIS:\n{whois_text}\n"
+    text += f"\nENLACES DE INVESTIGACION\n"
+    text += f"VT: {vt_l}\n"
+    if 'ab_l' in details: text += f"AbuseIPDB: {details['ab_l']}\n"
+    text += "========================================\n\n"
     return text
 
 def build_analysis_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, found_vt):
-    text = f"## 🔎 Reporte de IOC: {ioc}\n"
-    text += f"**Veredicto:** {verd.upper()} {get_status_icon(verd)}\n\n"
+    text = f"REPORTE DE IOC: {ioc}\n"
+    text += f"Veredicto: {verd.upper()}\n"
+    text += "----------------------------------------\n"
     text += build_context_block(ioc_type, vt_m, vt_t, details, found_vt)
-    text += f"\n**Enlaces de consulta:** [VT]({vt_l})"
-    if 'ab_l' in details: text += f" | [AbuseIPDB]({details['ab_l']})"
-    text += "\n\n---\n"
+    text += f"\nENLACES: {vt_l}"
+    if 'ab_l' in details: text += f" | {details['ab_l']}"
+    text += "\n\n----------------------------------------\n"
     return text
 
 def render_copy_box(title: str, text: str, unique_key: str):
     st.subheader(title)
-    escaped_text = html.escape(text)
     comp_html = f"""
     <textarea id="{unique_key}" readonly style="width: 100%; height: 400px; padding: 15px; background: #0b0e14; color: #00ff41; font-family: monospace; border-radius: 8px; border: 1px solid #2d333b;">{text}</textarea>
     <button onclick="navigator.clipboard.writeText(document.getElementById('{unique_key}').value)" style="margin-top: 10px; background: #238636; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: bold;">Copiar {title}</button>
@@ -149,7 +151,7 @@ def render_copy_box(title: str, text: str, unique_key: str):
     components.html(comp_html, height=480)
 
 # =========================
-# LÓGICA PRINCIPAL (RESTO DEL FLUJO)
+# LÓGICA PRINCIPAL
 # =========================
 if "ioc_input" not in st.session_state: st.session_state["ioc_input"] = ""
 def clear_text(): st.session_state["ioc_input"] = ""
