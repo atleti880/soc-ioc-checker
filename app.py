@@ -36,6 +36,7 @@ def build_summary_block(ioc_results):
     if not ioc_results: return ""
     v_counts = Counter([res['verd'] for res in ioc_results])
     t_counts = Counter([res['type'] for res in ioc_results])
+    
     text = "RESUMEN EJECUTIVO DE IOCs\n========================================\n"
     text += f"Total analizados: {len(ioc_results)}\n\nDISTRIBUCION POR TIPO:\n"
     for t, count in t_counts.items(): text += f"- {t}: {count}\n"
@@ -68,27 +69,26 @@ raw_iocs = st.text_area("IOCs a analizar", key="ioc_input", height=100)
 if st.button("Iniciar Análisis", type="primary"):
     input_list = list(dict.fromkeys([x.strip() for x in raw_iocs.splitlines() if x.strip()]))
     
-    # INICIALIZACIÓN DE VARIABLES CRÍTICAS
+    # INICIALIZACIÓN OBLIGATORIA
     ioc_results = []
     full_internal = ""
     full_analysis = ""
     
     with st.spinner("Analizando..."):
         for ioc in input_list:
-            # (Aquí tu lógica de análisis previa...)
-            # ... asegurando que 'verd', 'vt_l', 'vt_m', 'vt_t', 'details', 'found_vt', 't' estén definidos
+            # Aquí va tu lógica de análisis previa (API calls, etc.)
+            # ... asegúrate de definir 'verd', 'vt_l', 't', 'vt_m', 'vt_t', 'details', 'found_vt', 'whois_info'
             
-            # GUARDAR RESULTADOS PARA EL RESUMEN
+            # GUARDAR RESULTADOS
             ioc_results.append({'ioc': ioc, 'type': t, 'verd': verd, 'vt_l': vt_l})
             
-            # CONSTRUIR BLOQUES DE TEXTO
+            # CONSTRUIR BLOQUES
             full_internal += f"ANALISIS INTERNO SOC - {verd.upper()}\n=================\nIOC: {ioc}\n\n" + build_context_block(t, vt_m, vt_t, details, found_vt) + "\n\n"
             full_analysis += f"REPORTE IOC: {ioc}\n-----------------\n" + build_context_block(t, vt_m, vt_t, details, found_vt) + "\n\n"
 
-    # GENERAR RESUMEN FINAL
+    # GENERAR RESUMEN FINAL Y MOSTRAR
     resumen_texto = build_summary_block(ioc_results)
     
-    # MOSTRAR Y PERMITIR COPIA
     c1, c2 = st.columns(2)
     with c1: st.text_area("Investigación Interna", resumen_texto + full_internal, height=400)
     with c2: st.text_area("Análisis de IOC", resumen_texto + full_analysis, height=400)
