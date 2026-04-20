@@ -11,24 +11,27 @@ import streamlit.components.v1 as components
 from urllib.parse import urlparse
 from collections import Counter
 
+# Intento de importación de WHOIS
+try:
+    import whois
+    WHOIS_AVAILABLE = True
+except ImportError:
+    WHOIS_AVAILABLE = False
+
 # =========================
-# CONFIGURACIÓN Y APIS
+# CONFIGURACIÓN
 # =========================
 VT_API = st.secrets["VT_API"]
 ABUSE_API = st.secrets["ABUSE_API"]
 VT_HEADERS = {"x-apikey": VT_API}
 ABUSE_HEADERS = {"Key": ABUSE_API, "Accept": "application/json"}
 
-st.set_page_config(page_title="SOC IOC Checker v3.5", page_icon="🛡️", layout="wide")
+st.set_page_config(page_title="SOC IOC Checker", layout="wide")
 st.title("🛡️ SOC IOC Checker")
 
 # =========================
-# UTILIDADES Y BLOQUES DE TEXTO
+# FUNCIONES DE CONSTRUCCIÓN
 # =========================
-def get_status_icon(verdict):
-    icons = {"Malicioso": "🔴", "Sospechoso": "🟠", "Bajo riesgo": "🟢", "No encontrado": "⚪", "Error API": "❌"}
-    return icons.get(verdict, "❓")
-
 def build_summary_block(ioc_results):
     if not ioc_results: return ""
     v_counts = Counter([res['verd'] for res in ioc_results])
@@ -64,30 +67,28 @@ raw_iocs = st.text_area("IOCs a analizar", key="ioc_input", height=100)
 
 if st.button("Iniciar Análisis", type="primary"):
     input_list = list(dict.fromkeys([x.strip() for x in raw_iocs.splitlines() if x.strip()]))
-    ioc_results, list_ips, list_hashes, list_urls = [], [], [], []
-    full_internal, full_analysis = "", ""
-
+    
+    # INICIALIZACIÓN DE VARIABLES CRÍTICAS
+    ioc_results = []
+    full_internal = ""
+    full_analysis = ""
+    
     with st.spinner("Analizando..."):
         for ioc in input_list:
-            # ... [Aquí mantienes tu lógica de llamadas API existente] ...
-            # Asegúrate de definir verd, vt_m, vt_t, vt_l, details, found_vt, whois_info dentro del bucle
+            # (Aquí tu lógica de análisis previa...)
+            # ... asegurando que 'verd', 'vt_l', 'vt_m', 'vt_t', 'details', 'found_vt', 't' estén definidos
             
-            # GUARDAR DATOS PARA TABLAS Y RESUMEN
+            # GUARDAR RESULTADOS PARA EL RESUMEN
             ioc_results.append({'ioc': ioc, 'type': t, 'verd': verd, 'vt_l': vt_l})
             
-            # CONSTRUIR BLOQUES
+            # CONSTRUIR BLOQUES DE TEXTO
             full_internal += f"ANALISIS INTERNO SOC - {verd.upper()}\n=================\nIOC: {ioc}\n\n" + build_context_block(t, vt_m, vt_t, details, found_vt) + "\n\n"
-            full_analysis += f"REPORTE IOC: {ioc}\nVeredicto: {verd.upper()}\n-----------------\n" + build_context_block(t, vt_m, vt_t, details, found_vt) + "\n\n"
+            full_analysis += f"REPORTE IOC: {ioc}\n-----------------\n" + build_context_block(t, vt_m, vt_t, details, found_vt) + "\n\n"
 
-    # RENDERIZADO VISUAL
-    st.header("📋 IOC Analizados")
-    t1, t2, t3 = st.tabs(["IPs", "Archivos", "URLs"])
-    with t1: st.dataframe(pd.DataFrame(list_ips))
-    with t2: st.dataframe(pd.DataFrame(list_hashes))
-    with t3: st.dataframe(pd.DataFrame(list_urls))
-
-    # RENDERIZADO PARA COPIAR A ITOP
-    resumen = build_summary_block(ioc_results)
+    # GENERAR RESUMEN FINAL
+    resumen_texto = build_summary_block(ioc_results)
+    
+    # MOSTRAR Y PERMITIR COPIA
     c1, c2 = st.columns(2)
-    with c1: st.text_area("Investigación Interna", resumen + full_internal, height=400)
-    with c2: st.text_area("Análisis de IOC", resumen + full_analysis, height=400)
+    with c1: st.text_area("Investigación Interna", resumen_texto + full_internal, height=400)
+    with c2: st.text_area("Análisis de IOC", resumen_texto + full_analysis, height=400)
