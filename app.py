@@ -26,10 +26,10 @@ ABUSE_API = st.secrets["ABUSE_API"]
 VT_HEADERS = {"x-apikey": VT_API}
 ABUSE_HEADERS = {"Key": ABUSE_API, "Accept": "application/json"}
 
-st.set_page_config(page_title="SOC IOC Checker v3.5", page_icon="🛡️", layout="wide")
+st.set_page_config(page_title="SOC IOC Checker v3.4", page_icon="🛡️", layout="wide")
 
 st.title("🛡️ SOC IOC Checker")
-st.caption("Análisis de IOC VirusTotal & AbuseIP")
+st.caption("Análisis de IOC  VirusTotal & AbuseIP")
 
 # =========================
 # UTILIDADES
@@ -73,32 +73,22 @@ def get_whois_info(target):
 def vt_url_id(url: str) -> str:
     return base64.urlsafe_b64encode(url.encode()).decode().strip("=")
 
-def get_verdict(vt_m=0, ab_s=0, found_in_vt=True):
-    if not found_in_vt and ab_s == 0: return "No encontrado"
+def get_verdict(vt_m=0, ab_s=0):
     if ab_s >= 80 or vt_m >= 5: return "Malicioso"
     if ab_s >= 25 or vt_m >= 1: return "Sospechoso"
     return "Bajo riesgo"
 
 def get_status_icon(verdict: str) -> str:
-    icons = {
-        "Malicioso": "🔴", 
-        "Sospechoso": "🟠", 
-        "Bajo riesgo": "🟢", 
-        "No encontrado": "⚪", 
-        "Error API": "❌"
-    }
-    return icons.get(verdict, "❓")
+    icons = {"Malicioso": "🔴", "Sospechoso": "🟠", "Bajo riesgo": "🟢"}
+    return icons.get(verdict, "⚪")
 
 # =========================
 # CONSTRUCCIÓN DE REPORTES
 # =========================
-def build_context_block(ioc_type, vt_m, vt_t, details, found_vt):
-    text = f"REPUTACIÓN Y CONTEXTO\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━-\n"
-    if not found_vt:
-        text += f"● VirusTotal:       IOC NO ENCONTRADO EN BASE DE DATOS\n"
-    else:
-        text += f"● VirusTotal:       {vt_m}/{vt_t} detecciones\n"
-    
+def build_context_block(ioc_type, vt_m, vt_t, details):
+    """Genera el bloque de Reputación y Contexto para ambos reportes"""
+    text = f"[ REPUTACIÓN Y CONTEXTO ]\n--------------------------------------------------\n"
+    text += f"● VirusTotal:  {vt_m}/{vt_t} detecciones\n"
     if "ab_s" in details: text += f"● AbuseIPDB Score:  {details['ab_s']}%\n"
     
     if ioc_type == "IP" or "Resolved_IP" in details:
@@ -109,37 +99,41 @@ def build_context_block(ioc_type, vt_m, vt_t, details, found_vt):
         text += f"● Hostname:         {details.get('Hostname', 'N/A')}\n"
     elif ioc_type == "Hash":
         text += f"● Tipo Archivo:     {details.get('FileType', 'N/A')}\n"
-        text += f"● Nombre visto:     {details.get('FileName', 'N/A')}\n"
+        text += f"● Nombre:     {details.get('FileName', 'N/A')}\n"
         text += f"● Firma Digital:    {details.get('Firmado', 'N/A')}\n"
     elif ioc_type == "URL":
         text += f"● Categoría:        {details.get('Category', 'N/A')}\n"
     return text
 
-def build_internal_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, whois_text, found_vt):
+def build_internal_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, whois_text):
     icon = get_status_icon(verd)
+    text = f"╔════════════════════════════════════════════════════════════╗\n"
     text += f"   ANALISIS INTERNO SOC - {verd.upper()}\n"
-    text += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    text += f"╚════════════════════════════════════════════════════════════╝\n\n"
     text += f"● IOC ANALIZADO: {ioc}\n"
     text += f"● TIPO:          {ioc_type}\n\n"
     
-    text += build_context_block(ioc_type, vt_m, vt_t, details, found_vt)
+    text += build_context_block(ioc_type, vt_m, vt_t, details)
     
     if whois_text:
-        text += f"\nWHOIS / REGISTRO\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━n{whois_text}\n"
+        text += f"\n [ WHOIS / REGISTRO ]\n--------------------------------------------------\n{whois_text}\n"
         
-    text += f"\n[ ENLACES ]\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━n- VT: {vt_l}\n"
+    text += f"\n [ ENLACES ]\n--------------------------------------------------\n- VirusTotal: {vt_l}\n"
     if 'ab_l' in details: text += f"- Abuse: {details['ab_l']}\n"
     text += "\n" + "═"*60 + "\n\n"
     return text
 
-def build_analysis_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, found_vt):
+def build_analysis_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details):
     icon = get_status_icon(verd)
-    text = f"ANÁLISIS IOC - {ioc}\n"
-    text = f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    text = f" ANÁLISIS IOC - {ioc}\n"
+    text += f"--------------------------------------------------\n"
     text += f"RESULTADO: {verd.upper()}\n\n"
-    text += build_context_block(ioc_type, vt_m, vt_t, details, found_vt)
-    text += f"\nENLACES\n--------------------------------------------------\n- VT: {vt_l}\n"
-    if 'ab_l' in details: text += f"- Abuse: {details['ab_l']}\n"
+    
+    # Insertamos el mismo recuadro de reputación y contexto
+    text += build_context_block(ioc_type, vt_m, vt_t, details)
+    
+    text += f"\n [ ENLACES ]\n--------------------------------------------------\n- VirusTotal: {vt_l}\n"
+    if 'ab_l' in details: text += f"- AbuseIP: {details['ab_l']}\n"
     text += "--------------------------------------------------\n\n"
     return text
 
@@ -179,23 +173,11 @@ if st.button("Iniciar Análisis", type="primary", use_container_width=True):
             
             vt_id = vt_url_id(ioc) if t == "URL" else ioc
             v_res = requests.get(f"https://www.virustotal.com/api/v3/{'ip_addresses' if t=='IP' else 'files' if t=='Hash' else 'urls'}/{vt_id}", headers=VT_HEADERS)
+            v_attr = v_res.json().get("data", {}).get("attributes", {}) if v_res.status_code == 200 else {}
             
-            found_vt = True
-            if v_res.status_code == 404:
-                found_vt = False
-                v_attr = {}
-                vt_m, vt_t = 0, 0
-            elif v_res.status_code != 200:
-                found_vt = False
-                v_attr = {}
-                vt_m, vt_t = 0, 0
-                verd = "Error API"
-            else:
-                v_attr = v_res.json().get("data", {}).get("attributes", {})
-                vt_m = v_attr.get("last_analysis_stats", {}).get("malicious", 0)
-                vt_t = sum(v_attr.get("last_analysis_stats", {}).values())
-
+            vt_m, vt_t = v_attr.get("last_analysis_stats", {}).get("malicious", 0), sum(v_attr.get("last_analysis_stats", {}).values())
             vt_l = f"https://www.virustotal.com/gui/{'ip-address' if t=='IP' else 'file' if t=='Hash' else 'url'}/{vt_id}"
+            
             details, whois_info = {}, ""
 
             if t == "IP":
@@ -204,24 +186,20 @@ if st.button("Iniciar Análisis", type="primary", use_container_width=True):
                 ab_s = a_data.get("abuseConfidenceScore", 0)
                 pais = get_full_country_name(a_data.get("countryCode", "N/A"))
                 isp = a_data.get("isp", "N/A")
-                verd = get_verdict(vt_m, ab_s, found_vt)
+                verd = get_verdict(vt_m, ab_s)
                 ab_l = f"https://www.abuseipdb.com/check/{ioc}"
                 details.update({"ab_s": ab_s, "ab_l": ab_l, "ISP": isp, "CountryName": pais, "UsageType": a_data.get("usageType", "N/A"), "Hostname": ", ".join(a_data.get("hostnames", [])) or "N/A"})
                 whois_info, _ = get_whois_info(ioc)
-                list_ips.append({"Estado": get_status_icon(verd), "IP": ioc, "País": pais, "ISP": isp, "Abuse": f"{ab_s}%", "VT": f"{vt_m}/{vt_t}" if found_vt else "No encontrado", "VirusTotal": vt_l, "AbuseIPDB": ab_l})
+                list_ips.append({"Estado": get_status_icon(verd), "IP": ioc, "País": pais, "ISP": isp, "Abuse": f"{ab_s}%", "VT": f"{vt_m}/{vt_t}", "VirusTotal": vt_l, "AbuseIPDB": ab_l})
 
             elif t == "Hash":
                 sig = v_attr.get("signature_info", {})
                 firm = "Válida" if sig.get("verified") == "Valid" else ("No válida" if sig else "No")
-                if v_res.status_code == 404: verd = "No encontrado"
-                elif v_res.status_code != 200: verd = "Error API"
-                else: verd = get_verdict(vt_m, 0, found_vt)
-                
-                details.update({"FileType": v_attr.get("type_description", "N/A"), "FileName": v_attr.get("meaningful_name", "N/A"), "Firmado": firm if found_vt else "N/A"})
-                list_hashes.append({"Estado": get_status_icon(verd), "Hash": ioc, "Nombre": details['FileName'], "Firmado": details['Firmado'], "VT": f"{vt_m}/{vt_t}" if found_vt else "No encontrado", "VirusTotal": vt_l})
+                verd = get_verdict(vt_m, 0)
+                details.update({"FileType": v_attr.get("type_description", "N/A"), "FileName": v_attr.get("meaningful_name", "N/A"), "Firmado": firm})
+                list_hashes.append({"Estado": get_status_icon(verd), "Hash": ioc, "Nombre": details['FileName'], "Firmado": firm, "VirusTotal": f"{vt_m}/{vt_t}", "VirusTotal": vt_l})
 
             elif t == "URL":
-                ab_s, ab_l = 0, None
                 try:
                     domain = urlparse(ioc if "://" in ioc else "http://"+ioc).netloc
                     rip = socket.gethostbyname(domain)
@@ -230,34 +208,35 @@ if st.button("Iniciar Análisis", type="primary", use_container_width=True):
                     ab_s = a_data.get("abuseConfidenceScore", 0)
                     ab_l = f"https://www.abuseipdb.com/check/{rip}"
                     details.update({"ab_s": ab_s, "ab_l": ab_l, "Resolved_IP": rip, "ISP": a_data.get("isp", "N/A")})
-                except: pass
-                
-                if not found_vt and ab_s == 0: verd = "No encontrado"
-                elif v_res.status_code != 200 and v_res.status_code != 404: verd = "Error API"
-                else: verd = get_verdict(vt_m, ab_s, found_vt)
-                
+                except: ab_s, ab_l = 0, None
+                verd = get_verdict(vt_m, ab_s)
                 whois_info, p_code = get_whois_info(ioc)
                 details.update({"Category": v_attr.get("categories", {}).get("Forcepoint", "N/A"), "CountryName": get_full_country_name(p_code)})
-                list_urls.append({"Estado": get_status_icon(verd), "URL/Dominio": ioc, "Categoría": details['Category'], "IP Resuelta": details.get('Resolved_IP', 'N/A'), "VT": f"{vt_m}/{vt_t}" if found_vt else "No encontrado", "VirusTotal": vt_l, "AbuseIPDB": ab_l})
+                list_urls.append({"Estado": get_status_icon(verd), "URL/Dominio": ioc, "Categoría": details['Category'], "IP Resuelta": details.get('Resolved_IP', 'N/A'), "VirusTotal": f"{vt_m}/{vt_t}", "VirusTotal": vt_l, "AbuseIPDB": ab_l})
 
-            full_internal += build_internal_block(ioc, t, verd, vt_m, vt_t, vt_l, details, whois_info, found_vt)
-            full_analysis += build_analysis_block(ioc, t, verd, vt_m, vt_t, vt_l, details, found_vt)
+            full_internal += build_internal_block(ioc, t, verd, vt_m, vt_t, vt_l, details, whois_info)
+            full_analysis += build_analysis_block(ioc, t, verd, vt_m, vt_t, vt_l, details)
 
     # RENDERIZADO DE TABLAS
     st.header("📋 IOC Analizados")
     t_ip, t_hash, t_url = st.tabs([f"🌐 IPs ({len(list_ips)})", f"📄 Archivos ({len(list_hashes)})", f"🔗 URLs/Dominios ({len(list_urls)})"])
     
-    link_config = {"VirusTotal": st.column_config.LinkColumn("VirusTotal", display_text="Ver"), "AbuseIPDB": st.column_config.LinkColumn("AbuseIPDB", display_text="Ver")}
+    link_config = {
+        "VirusTotal": st.column_config.LinkColumn("VirusTotal", display_text="Ver"),
+        "AbuseIPDB": st.column_config.LinkColumn("AbuseIPDB", display_text="Ver")
+    }
 
     with t_ip: 
         if list_ips: st.dataframe(pd.DataFrame(list_ips), use_container_width=True, hide_index=True, column_config=link_config)
+        else: st.info("No se analizaron IPs.")
     with t_hash:
         if list_hashes: st.dataframe(pd.DataFrame(list_hashes), use_container_width=True, hide_index=True, column_config=link_config)
+        else: st.info("No se analizaron archivos.")
     with t_url:
         if list_urls: st.dataframe(pd.DataFrame(list_urls), use_container_width=True, hide_index=True, column_config=link_config)
+        else: st.info("No se analizaron URLs.")
 
     st.divider()
     c1, c2 = st.columns(2)
     with c1: render_copy_box("Investigación Interna", full_internal, "int_box")
     with c2: render_copy_box("Análisis de IOC", full_analysis, "ana_box")
-
