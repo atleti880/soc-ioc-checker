@@ -83,7 +83,7 @@ def get_status_icon(verdict: str) -> str:
     return icons.get(verdict, "⚪")
 
 # =========================
-# RESUMEN EJECUTIVO (SIN ICONOS EN ENLACES)
+# RESUMEN EJECUTIVO (MODIFICADO)
 # =========================
 def build_executive_summary(summary_list):
     total = len(summary_list)
@@ -91,10 +91,10 @@ def build_executive_summary(summary_list):
     resumen = f"[ RESUMEN EJECUTIVO ]\nTotal IOCs: {total} | Maliciosos: {maliciosos}\n"
     resumen += "-"*60 + "\n"
     for item in summary_list:
-        resumen += f"{get_status_icon(item['verd'])} {item['tipo']}: {item['ioc']} ({item['verd']})\n"
-        resumen += f"   VT: {item['vt_l']}\n"
+        resumen += f"{item['tipo']}: {item['ioc']} ({item['verd']})\n"
+        resumen += f"   VirusTotal: {item['vt_l']}\n"
         if item.get('ab_l'): 
-            resumen += f"   Abuse: {item['ab_l']}\n"
+            resumen += f"   AbuseIP: {item['ab_l']}\n"
     resumen += "-"*60 + "\n\n"
     return resumen
 
