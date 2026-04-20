@@ -83,7 +83,7 @@ def get_status_icon(verdict: str) -> str:
     return icons.get(verdict, "⚪")
 
 # =========================
-# NUEVA FUNCIÓN DE RESUMEN EJECUTIVO
+# RESUMEN EJECUTIVO
 # =========================
 def build_executive_summary(summary_list):
     total = len(summary_list)
@@ -92,6 +92,9 @@ def build_executive_summary(summary_list):
     resumen += "-"*60 + "\n"
     for item in summary_list:
         resumen += f"{get_status_icon(item['verd'])} {item['tipo']}: {item['ioc']} ({item['verd']})\n"
+        resumen += f"   🔗 VT: {item['vt_l']}\n"
+        if item.get('ab_l'): 
+            resumen += f"   🛡️ Abuse: {item['ab_l']}\n"
     resumen += "-"*60 + "\n\n"
     return resumen
 
@@ -169,7 +172,7 @@ if st.button("Iniciar Análisis", type="primary", use_container_width=True):
 
     list_ips, list_hashes, list_urls = [], [], []
     full_internal, full_analysis = "" , ""
-    summary_list = [] # Lista para el resumen
+    summary_list = []
 
     with st.spinner("Analizando..."):
         for ioc in input_list:
@@ -219,16 +222,14 @@ if st.button("Iniciar Análisis", type="primary", use_container_width=True):
                 details.update({"Category": v_attr.get("categories", {}).get("Forcepoint", "N/A"), "CountryName": get_full_country_name(p_code)})
                 list_urls.append({"Estado": get_status_icon(verd), "URL/Dominio": ioc, "Categoría": details['Category'], "IP Resuelta": details.get('Resolved_IP', 'N/A'), "VirusTotal": f"{vt_m}/{vt_t}", "VirusTotal": vt_l, "AbuseIPDB": ab_l})
 
-            summary_list.append({"ioc": ioc, "tipo": t, "verd": verd})
+            summary_list.append({"ioc": ioc, "tipo": t, "verd": verd, "vt_l": vt_l, "ab_l": ab_l})
             full_internal += build_internal_block(ioc, t, verd, vt_m, vt_t, vt_l, details, whois_info)
             full_analysis += build_analysis_block(ioc, t, verd, vt_m, vt_t, vt_l, details)
 
-    # Generar texto final con el resumen al inicio
     resumen_final = build_executive_summary(summary_list)
     full_internal = resumen_final + full_internal
     full_analysis = resumen_final + full_analysis
 
-    # RENDERIZADO DE TABLAS
     st.header("📋 IOC Analizados")
     t_ip, t_hash, t_url = st.tabs([f"🌐 IPs ({len(list_ips)})", f"📄 Archivos ({len(list_hashes)})", f"🔗 URLs/Dominios ({len(list_urls)})"])
     
