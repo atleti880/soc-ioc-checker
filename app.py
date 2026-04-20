@@ -74,7 +74,8 @@ def vt_url_id(url: str) -> str:
     return base64.urlsafe_b64encode(url.encode()).decode().strip("=")
 
 def get_verdict(vt_m=0, ab_s=0):
-    if ab_s >= 80 or vt_m >= 5: return "Malicioso"
+    # A partir de 2 detecciones en VT se marca como Malicioso
+    if ab_s >= 80 or vt_m >= 2: return "Malicioso"
     if ab_s >= 25 or vt_m >= 1: return "Sospechoso"
     return "Bajo riesgo"
 
@@ -83,12 +84,14 @@ def get_status_icon(verdict: str) -> str:
     return icons.get(verdict, "⚪")
 
 # =========================
-# RESUMEN EJECUTIVO (MODIFICADO)
+# RESUMEN EJECUTIVO (ACTUALIZADO CON SOSPECHOSOS)
 # =========================
 def build_executive_summary(summary_list):
     total = len(summary_list)
     maliciosos = sum(1 for item in summary_list if item['verd'] == "Malicioso")
-    resumen = f"[ RESUMEN EJECUTIVO ]\nTotal IOCs: {total} | Maliciosos: {maliciosos}\n"
+    sospechosos = sum(1 for item in summary_list if item['verd'] == "Sospechoso")
+    
+    resumen = f"[ RESUMEN EJECUTIVO ]\nTotal IOCs: {total} | Maliciosos: {maliciosos} | Sospechosos: {sospechosos}\n"
     resumen += "-"*60 + "\n"
     for item in summary_list:
         resumen += f"{item['tipo']}: {item['ioc']} ({item['verd']})\n"
@@ -114,7 +117,7 @@ def build_context_block(ioc_type, vt_m, vt_t, details):
         text += f"● Hostname:         {details.get('Hostname', 'N/A')}\n"
     elif ioc_type == "Hash":
         text += f"● Tipo Archivo:     {details.get('FileType', 'N/A')}\n"
-        text += f"● Nombre:     {details.get('FileName', 'N/A')}\n"
+        text += f"● Nombre:           {details.get('FileName', 'N/A')}\n"
         text += f"● Firma Digital:    {details.get('Firmado', 'N/A')}\n"
     elif ioc_type == "URL":
         text += f"● Categoría:        {details.get('Category', 'N/A')}\n"
@@ -130,7 +133,7 @@ def build_internal_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, whois_t
     if whois_text:
         text += f"\n [ WHOIS / REGISTRO ]\n--------------------------------------------------\n{whois_text}\n"
     text += f"\n [ ENLACES ]\n--------------------------------------------------\n- VirusTotal: {vt_l}\n"
-    if 'ab_l' in details: text += f"- Abuse: {details['ab_l']}\n"
+    if 'ab_l' in details: text += f"- AbuseIP: {details['ab_l']}\n"
     text += "\n" + "═"*60 + "\n\n"
     return text
 
