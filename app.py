@@ -83,10 +83,22 @@ def get_status_icon(verdict: str) -> str:
     return icons.get(verdict, "⚪")
 
 # =========================
+# NUEVA FUNCIÓN DE RESUMEN EJECUTIVO
+# =========================
+def build_executive_summary(summary_list):
+    total = len(summary_list)
+    maliciosos = sum(1 for item in summary_list if item['verd'] == "Malicioso")
+    resumen = f"[ RESUMEN EJECUTIVO ]\nTotal IOCs: {total} | Maliciosos: {maliciosos}\n"
+    resumen += "-"*60 + "\n"
+    for item in summary_list:
+        resumen += f"{get_status_icon(item['verd'])} {item['tipo']}: {item['ioc']} ({item['verd']})\n"
+    resumen += "-"*60 + "\n\n"
+    return resumen
+
+# =========================
 # CONSTRUCCIÓN DE REPORTES
 # =========================
 def build_context_block(ioc_type, vt_m, vt_t, details):
-    """Genera el bloque de Reputación y Contexto para ambos reportes"""
     text = f"[ REPUTACIÓN Y CONTEXTO ]\n--------------------------------------------------\n"
     text += f"● VirusTotal:  {vt_m}/{vt_t} detecciones\n"
     if "ab_s" in details: text += f"● AbuseIPDB Score:  {details['ab_s']}%\n"
@@ -106,32 +118,24 @@ def build_context_block(ioc_type, vt_m, vt_t, details):
     return text
 
 def build_internal_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, whois_text):
-    icon = get_status_icon(verd)
     text = f"╔════════════════════════════════════════════════════════════╗\n"
     text += f"   ANALISIS INTERNO SOC - {verd.upper()}\n"
     text += f"╚════════════════════════════════════════════════════════════╝\n\n"
     text += f"● IOC ANALIZADO: {ioc}\n"
     text += f"● TIPO:          {ioc_type}\n\n"
-    
     text += build_context_block(ioc_type, vt_m, vt_t, details)
-    
     if whois_text:
         text += f"\n [ WHOIS / REGISTRO ]\n--------------------------------------------------\n{whois_text}\n"
-        
     text += f"\n [ ENLACES ]\n--------------------------------------------------\n- VirusTotal: {vt_l}\n"
     if 'ab_l' in details: text += f"- Abuse: {details['ab_l']}\n"
     text += "\n" + "═"*60 + "\n\n"
     return text
 
 def build_analysis_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details):
-    icon = get_status_icon(verd)
     text = f" ANÁLISIS IOC - {ioc}\n"
     text += f"--------------------------------------------------\n"
     text += f"RESULTADO: {verd.upper()}\n\n"
-    
-    # Insertamos el mismo recuadro de reputación y contexto
     text += build_context_block(ioc_type, vt_m, vt_t, details)
-    
     text += f"\n [ ENLACES ]\n--------------------------------------------------\n- VirusTotal: {vt_l}\n"
     if 'ab_l' in details: text += f"- AbuseIP: {details['ab_l']}\n"
     text += "--------------------------------------------------\n\n"
@@ -165,6 +169,7 @@ if st.button("Iniciar Análisis", type="primary", use_container_width=True):
 
     list_ips, list_hashes, list_urls = [], [], []
     full_internal, full_analysis = "" , ""
+    summary_list = [] # Lista para el resumen
 
     with st.spinner("Analizando..."):
         for ioc in input_list:
@@ -214,8 +219,14 @@ if st.button("Iniciar Análisis", type="primary", use_container_width=True):
                 details.update({"Category": v_attr.get("categories", {}).get("Forcepoint", "N/A"), "CountryName": get_full_country_name(p_code)})
                 list_urls.append({"Estado": get_status_icon(verd), "URL/Dominio": ioc, "Categoría": details['Category'], "IP Resuelta": details.get('Resolved_IP', 'N/A'), "VirusTotal": f"{vt_m}/{vt_t}", "VirusTotal": vt_l, "AbuseIPDB": ab_l})
 
+            summary_list.append({"ioc": ioc, "tipo": t, "verd": verd})
             full_internal += build_internal_block(ioc, t, verd, vt_m, vt_t, vt_l, details, whois_info)
             full_analysis += build_analysis_block(ioc, t, verd, vt_m, vt_t, vt_l, details)
+
+    # Generar texto final con el resumen al inicio
+    resumen_final = build_executive_summary(summary_list)
+    full_internal = resumen_final + full_internal
+    full_analysis = resumen_final + full_analysis
 
     # RENDERIZADO DE TABLAS
     st.header("📋 IOC Analizados")
