@@ -93,7 +93,7 @@ def get_status_icon(verdict: str) -> str:
 # CONSTRUCCIÓN DE REPORTES
 # =========================
 def build_context_block(ioc_type, vt_m, vt_t, details, found_vt):
-    text = f"[ REPUTACIÓN Y CONTEXTO ]\n--------------------------------------------------\n"
+    text = f"REPUTACIÓN Y CONTEXTO\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━-\n"
     if not found_vt:
         text += f"● VirusTotal:       IOC NO ENCONTRADO EN BASE DE DATOS\n"
     else:
@@ -117,18 +117,17 @@ def build_context_block(ioc_type, vt_m, vt_t, details, found_vt):
 
 def build_internal_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, whois_text, found_vt):
     icon = get_status_icon(verd)
-    text = f"╔════════════════════════════════════════════════════════════╗\n"
     text += f"   ANALISIS INTERNO SOC - {verd.upper()}\n"
-    text += f"╚════════════════════════════════════════════════════════════╝\n\n"
+    text += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
     text += f"● IOC ANALIZADO: {ioc}\n"
     text += f"● TIPO:          {ioc_type}\n\n"
     
     text += build_context_block(ioc_type, vt_m, vt_t, details, found_vt)
     
     if whois_text:
-        text += f"\n[ WHOIS / REGISTRO ]\n--------------------------------------------------\n{whois_text}\n"
+        text += f"\nWHOIS / REGISTRO\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━n{whois_text}\n"
         
-    text += f"\n[ ENLACES ]\n--------------------------------------------------\n- VT: {vt_l}\n"
+    text += f"\n[ ENLACES ]\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━n- VT: {vt_l}\n"
     if 'ab_l' in details: text += f"- Abuse: {details['ab_l']}\n"
     text += "\n" + "═"*60 + "\n\n"
     return text
@@ -136,10 +135,10 @@ def build_internal_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, whois_t
 def build_analysis_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, found_vt):
     icon = get_status_icon(verd)
     text = f"ANÁLISIS IOC - {ioc}\n"
-    text += f"--------------------------------------------------\n"
+    text += f━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━n"
     text += f"RESULTADO: {verd.upper()}\n\n"
     text += build_context_block(ioc_type, vt_m, vt_t, details, found_vt)
-    text += f"\n[ ENLACES ]\n--------------------------------------------------\n- VT: {vt_l}\n"
+    text += f"\nENLACES\n--------------------------------------------------\n- VT: {vt_l}\n"
     if 'ab_l' in details: text += f"- Abuse: {details['ab_l']}\n"
     text += "--------------------------------------------------\n\n"
     return text
