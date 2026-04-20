@@ -135,7 +135,7 @@ def build_internal_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, whois_t
 def build_analysis_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, found_vt):
     icon = get_status_icon(verd)
     text = f"ANÁLISIS IOC - {ioc}\n"
-    text += f━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━n"
+   text += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
     text += f"RESULTADO: {verd.upper()}\n\n"
     text += build_context_block(ioc_type, vt_m, vt_t, details, found_vt)
     text += f"\nENLACES\n--------------------------------------------------\n- VT: {vt_l}\n"
