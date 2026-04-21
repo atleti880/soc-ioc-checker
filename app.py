@@ -29,7 +29,7 @@ ABUSE_HEADERS = {"Key": ABUSE_API, "Accept": "application/json"}
 st.set_page_config(page_title="SOC IOC Checker v3.5", page_icon="🛡️", layout="wide")
 
 st.title("🛡️ SOC IOC Checker")
-st.caption("Análisis de IOC ViruTotal & AbuseIP")
+st.caption("Análisis de IOC con manejo de errores VT")
 
 # =========================
 # UTILIDADES
@@ -73,7 +73,8 @@ def get_whois_info(target):
 def vt_url_id(url: str) -> str:
     return base64.urlsafe_b64encode(url.encode()).decode().strip("=")
 
-def get_verdict(vt_m=0, ab_s=0):
+def get_verdict(vt_m=0, ab_s=0, found_in_vt=True):
+    if not found_in_vt: return "Sospechoso"
     if ab_s >= 80 or vt_m >= 5: return "Malicioso"
     if ab_s >= 25 or vt_m >= 1: return "Sospechoso"
     return "Bajo riesgo"
@@ -90,7 +91,7 @@ def build_executive_summary(summary_list):
     maliciosos = sum(1 for item in summary_list if item['verd'] == "Malicioso")
     sospechosos = sum(1 for item in summary_list if item['verd'] == "Sospechoso")
     
-    resumen = f"RESUMEN EJECUTIVO\nTotal IOCs: {total} | Maliciosos: {maliciosos} | Sospechosos: {sospechosos}\n"
+    resumen = f"[ RESUMEN EJECUTIVO ]\nTotal IOCs: {total} | Maliciosos: {maliciosos} | Sospechosos: {sospechosos}\n"
     resumen += "-"*60 + "\n"
     for item in summary_list:
         resumen += f"{item['tipo']}: {item['ioc']} ({item['verd']})\n"
@@ -104,7 +105,7 @@ def build_executive_summary(summary_list):
 # CONSTRUCCIÓN DE REPORTES
 # =========================
 def build_context_block(ioc_type, vt_m, vt_t, details):
-    text = f"REPUTACIÓN Y CONTEXTO\n"
+    text = f"[ REPUTACIÓN Y CONTEXTO ]\n--------------------------------------------------\n"
     text += f"● VirusTotal:  {vt_m}/{vt_t} detecciones\n"
     if "ab_s" in details: text += f"● AbuseIPDB Score:  {details['ab_s']}%\n"
     
@@ -123,13 +124,15 @@ def build_context_block(ioc_type, vt_m, vt_t, details):
     return text
 
 def build_internal_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, whois_text, ab_l):
-    text = f"ANALISIS INTERNO SOC - {verd.upper()}\n\n"
+    text = f"╔════════════════════════════════════════════════════════════╗\n"
+    text += f"   ANALISIS INTERNO SOC - {verd.upper()}\n"
+    text += f"╚════════════════════════════════════════════════════════════╝\n\n"
     text += f"● IOC ANALIZADO: {ioc}\n"
     text += f"● TIPO:          {ioc_type}\n\n"
     text += build_context_block(ioc_type, vt_m, vt_t, details)
     if whois_text:
-        text += f"\n WHOIS / REGISTRO\n{whois_text}\n"
-    text += f"\n ENLACES\n- VirusTotal: {vt_l}\n"
+        text += f"\n [ WHOIS / REGISTRO ]\n--------------------------------------------------\n{whois_text}\n"
+    text += f"\n [ ENLACES ]\n--------------------------------------------------\n- VirusTotal: {vt_l}\n"
     if ab_l: text += f"- AbuseIP: {ab_l}\n"
     text += "\n" + "═"*60 + "\n\n"
     return text
@@ -139,8 +142,9 @@ def build_analysis_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, ab_l):
     text += f"--------------------------------------------------\n"
     text += f"RESULTADO: {verd.upper()}\n\n"
     text += build_context_block(ioc_type, vt_m, vt_t, details)
-    text += f"\n ENLACES\n- VirusTotal: {vt_l}\n"
+    text += f"\n [ ENLACES ]\n--------------------------------------------------\n- VirusTotal: {vt_l}\n"
     if ab_l: text += f"- AbuseIP: {ab_l}\n"
+    text += "--------------------------------------------------\n\n"
     return text
 
 def render_copy_box(title: str, text: str, unique_key: str):
@@ -200,7 +204,7 @@ if st.button("Iniciar Análisis", type="primary", use_container_width=True):
                 ab_s = a_data.get("abuseConfidenceScore", 0)
                 pais = get_full_country_name(a_data.get("countryCode", "N/A"))
                 isp = a_data.get("isp", "N/A")
-                verd = get_verdict(vt_m, ab_s)
+                verd = get_verdict(vt_m, ab_s, found_in_vt)
                 ab_l = f"https://www.abuseipdb.com/check/{ioc}"
                 details.update({"ab_s": ab_s, "ISP": isp, "CountryName": pais, "UsageType": a_data.get("usageType", "N/A"), "Hostname": ", ".join(a_data.get("hostnames", [])) or "N/A"})
                 whois_info, _ = get_whois_info(ioc)
@@ -214,7 +218,7 @@ if st.button("Iniciar Análisis", type="primary", use_container_width=True):
                 else:
                     firm, filename = "N/A", "No encontrado en VT"
                 
-                verd = get_verdict(vt_m, 0)
+                verd = get_verdict(vt_m, 0, found_in_vt)
                 details.update({"FileType": v_attr.get("type_description", "N/A"), "FileName": filename, "Firmado": firm})
                 list_hashes.append({"Estado": get_status_icon(verd), "Hash": ioc, "Nombre": filename, "Firmado": firm, "VirusTotal": f"{vt_m}/{vt_t}", "VirusTotal_Link": vt_l})
 
@@ -228,7 +232,7 @@ if st.button("Iniciar Análisis", type="primary", use_container_width=True):
                     ab_l = f"https://www.abuseipdb.com/check/{rip}"
                     details.update({"ab_s": ab_s, "Resolved_IP": rip, "ISP": a_data.get("isp", "N/A")})
                 except: ab_s = 0
-                verd = get_verdict(vt_m, ab_s)
+                verd = get_verdict(vt_m, ab_s, found_in_vt)
                 whois_info, p_code = get_whois_info(ioc)
                 details.update({"Category": v_attr.get("categories", {}).get("Forcepoint", "N/A"), "CountryName": get_full_country_name(p_code)})
                 list_urls.append({"Estado": get_status_icon(verd), "URL/Dominio": ioc, "Categoría": details['Category'], "IP Resuelta": details.get('Resolved_IP', 'N/A'), "VirusTotal": f"{vt_m}/{vt_t}", "VirusTotal": vt_l, "AbuseIPDB": ab_l})
