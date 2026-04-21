@@ -90,21 +90,20 @@ def build_executive_summary(summary_list):
     maliciosos = sum(1 for item in summary_list if item['verd'] == "Malicioso")
     sospechosos = sum(1 for item in summary_list if item['verd'] == "Sospechoso")
     
-    resumen = f"[ RESUMEN EJECUTIVO ]\nTotal IOCs: {total} | Maliciosos: {maliciosos} | Sospechosos: {sospechosos}\n"
-    resumen += "-"*60 + "\n"
+    resumen = f"RESUMEN EJECUTIVO\nTotal IOCs: {total} | Maliciosos: {maliciosos} | Sospechosos: {sospechosos}\n\n"
     for item in summary_list:
         resumen += f"{item['tipo']}: {item['ioc']} ({item['verd']})\n"
         resumen += f"   VirusTotal: {item['vt_l']}\n"
         if item.get('ab_l'): 
             resumen += f"   AbuseIP: {item['ab_l']}\n"
-    resumen += "-"*60 + "\n\n"
+    resumen += "\n"
     return resumen
 
 # =========================
-# CONSTRUCCIÓN DE REPORTES
+# CONSTRUCCIÓN DE REPORTES (MODIFICADO)
 # =========================
 def build_context_block(ioc_type, vt_m, vt_t, details):
-    text = f"[ REPUTACIÓN Y CONTEXTO ]\n--------------------------------------------------\n"
+    text = f"REPUTACIÓN Y CONTEXTO\n"
     text += f"● VirusTotal:  {vt_m}/{vt_t} detecciones\n"
     if "ab_s" in details: text += f"● AbuseIPDB Score:  {details['ab_s']}%\n"
     
@@ -123,27 +122,24 @@ def build_context_block(ioc_type, vt_m, vt_t, details):
     return text
 
 def build_internal_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, whois_text, ab_l):
-    text = f"╔════════════════════════════════════════════════════════════╗\n"
-    text += f"   ANALISIS INTERNO SOC - {verd.upper()}\n"
-    text += f"╚════════════════════════════════════════════════════════════╝\n\n"
+    text = f"ANALISIS INTERNO SOC - {verd.upper()}\n\n"
     text += f"● IOC ANALIZADO: {ioc}\n"
     text += f"● TIPO:          {ioc_type}\n\n"
     text += build_context_block(ioc_type, vt_m, vt_t, details)
     if whois_text:
-        text += f"\n [ WHOIS / REGISTRO ]\n--------------------------------------------------\n{whois_text}\n"
-    text += f"\n [ ENLACES ]\n--------------------------------------------------\n- VirusTotal: {vt_l}\n"
+        text += f"\n WHOIS / REGISTRO\n{whois_text}\n"
+    text += f"\n ENLACES\n- VirusTotal: {vt_l}\n"
     if ab_l: text += f"- AbuseIP: {ab_l}\n"
-    text += "\n" + "═"*60 + "\n\n"
+    text += "\n"
     return text
 
 def build_analysis_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, ab_l):
     text = f" ANÁLISIS IOC - {ioc}\n"
-    text += f"--------------------------------------------------\n"
     text += f"RESULTADO: {verd.upper()}\n\n"
     text += build_context_block(ioc_type, vt_m, vt_t, details)
-    text += f"\n [ ENLACES ]\n--------------------------------------------------\n- VirusTotal: {vt_l}\n"
+    text += f"\n ENLACES\n- VirusTotal: {vt_l}\n"
     if ab_l: text += f"- AbuseIP: {ab_l}\n"
-    text += "--------------------------------------------------\n\n"
+    text += "\n"
     return text
 
 def render_copy_box(title: str, text: str, unique_key: str):
@@ -184,7 +180,6 @@ if st.button("Iniciar Análisis", type="primary", use_container_width=True):
             vt_id = vt_url_id(ioc) if t == "URL" else ioc
             v_res = requests.get(f"https://www.virustotal.com/api/v3/{'ip_addresses' if t=='IP' else 'files' if t=='Hash' else 'urls'}/{vt_id}", headers=VT_HEADERS)
             
-            # --- MANEJO DE ERROR VT ---
             if v_res.status_code == 200:
                 v_attr = v_res.json().get("data", {}).get("attributes", {})
                 vt_m, vt_t = v_attr.get("last_analysis_stats", {}).get("malicious", 0), sum(v_attr.get("last_analysis_stats", {}).values())
