@@ -29,7 +29,7 @@ ABUSE_HEADERS = {"Key": ABUSE_API, "Accept": "application/json"}
 st.set_page_config(page_title="SOC IOC Checker v3.5", page_icon="🛡️", layout="wide")
 
 st.title("🛡️ SOC IOC Checker")
-st.caption("Análisis de IOC con manejo de errores VT")
+st.caption("Análisis de IOC VirusTotal & AbuseIP")
 
 # =========================
 # UTILIDADES
@@ -236,9 +236,10 @@ if st.button("Iniciar Análisis", type="primary", use_container_width=True):
             full_internal += build_internal_block(ioc, t, verd, vt_m, vt_t, vt_l, details, whois_info, ab_l)
             full_analysis += build_analysis_block(ioc, t, verd, vt_m, vt_t, vt_l, details, ab_l)
 
+    # AQUÍ ESTÁ LA MODIFICACIÓN DE LA SEPARACIÓN:
     resumen_final = build_executive_summary(summary_list)
-    full_internal = resumen_final + full_internal
-    full_analysis = resumen_final + full_analysis
+    full_internal = resumen_final + "\n\n" + full_internal
+    full_analysis = resumen_final + "\n\n" + full_analysis
 
     st.header("📋 IOC Analizados")
     t_ip, t_hash, t_url = st.tabs([f"🌐 IPs ({len(list_ips)})", f"📄 Archivos ({len(list_hashes)})", f"🔗 URLs/Dominios ({len(list_urls)})"])
