@@ -29,7 +29,7 @@ ABUSE_HEADERS = {"Key": ABUSE_API, "Accept": "application/json"}
 st.set_page_config(page_title="SOC IOC Checker v3.5", page_icon="🛡️", layout="wide")
 
 st.title("🛡️ SOC IOC Checker")
-st.caption("Análisis de IOC VirusTotal & AbuseIP")
+st.caption("Análisis de IOC con manejo de errores VT")
 
 # =========================
 # UTILIDADES
@@ -90,20 +90,21 @@ def build_executive_summary(summary_list):
     maliciosos = sum(1 for item in summary_list if item['verd'] == "Malicioso")
     sospechosos = sum(1 for item in summary_list if item['verd'] == "Sospechoso")
     
-    resumen = f"RESUMEN EJECUTIVO\nTotal IOCs: {total} | Maliciosos: {maliciosos} | Sospechosos: {sospechosos}\n\n"
+    resumen = f"RESUMEN EJECUTIVO\nTotal IOCs: {total} | Maliciosos: {maliciosos} | Sospechosos: {sospechosos}\n"
+    resumen += "-"*60 + "\n"
     for item in summary_list:
         resumen += f"{item['tipo']}: {item['ioc']} ({item['verd']})\n"
         resumen += f"   VirusTotal: {item['vt_l']}\n"
         if item.get('ab_l'): 
             resumen += f"   AbuseIP: {item['ab_l']}\n"
-    resumen += "\n"
+    resumen += "-"*60 + "\n\n"
     return resumen
 
 # =========================
-# CONSTRUCCIÓN DE REPORTES (MODIFICADO)
+# CONSTRUCCIÓN DE REPORTES
 # =========================
 def build_context_block(ioc_type, vt_m, vt_t, details):
-    text = f"REPUTACIÓN Y CONTEXTO\n"
+    text = f"REPUTACIÓN Y CONTEXTO\n--------------------------------------------------\n"
     text += f"● VirusTotal:  {vt_m}/{vt_t} detecciones\n"
     if "ab_s" in details: text += f"● AbuseIPDB Score:  {details['ab_s']}%\n"
     
@@ -127,19 +128,20 @@ def build_internal_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, whois_t
     text += f"● TIPO:          {ioc_type}\n\n"
     text += build_context_block(ioc_type, vt_m, vt_t, details)
     if whois_text:
-        text += f"\n WHOIS / REGISTRO\n{whois_text}\n"
-    text += f"\n ENLACES\n- VirusTotal: {vt_l}\n"
+        text += f"\n WHOIS / REGISTRO\n--------------------------------------------------\n{whois_text}\n"
+    text += f"\n ENLACES\n--------------------------------------------------\n- VirusTotal: {vt_l}\n"
     if ab_l: text += f"- AbuseIP: {ab_l}\n"
-    text += "\n"
+    text += "\n" + "═"*60 + "\n\n"
     return text
 
 def build_analysis_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, ab_l):
     text = f" ANÁLISIS IOC - {ioc}\n"
+    text += f"--------------------------------------------------\n"
     text += f"RESULTADO: {verd.upper()}\n\n"
     text += build_context_block(ioc_type, vt_m, vt_t, details)
-    text += f"\n ENLACES\n- VirusTotal: {vt_l}\n"
+    text += f"\n ENLACES\n--------------------------------------------------\n- VirusTotal: {vt_l}\n"
     if ab_l: text += f"- AbuseIP: {ab_l}\n"
-    text += "\n"
+    text += "--------------------------------------------------\n\n"
     return text
 
 def render_copy_box(title: str, text: str, unique_key: str):
@@ -236,10 +238,11 @@ if st.button("Iniciar Análisis", type="primary", use_container_width=True):
             full_internal += build_internal_block(ioc, t, verd, vt_m, vt_t, vt_l, details, whois_info, ab_l)
             full_analysis += build_analysis_block(ioc, t, verd, vt_m, vt_t, vt_l, details, ab_l)
 
-    # AQUÍ ESTÁ LA MODIFICACIÓN DE LA SEPARACIÓN:
     resumen_final = build_executive_summary(summary_list)
-    full_internal = resumen_final + "\n\n" + full_internal
-    full_analysis = resumen_final + "\n\n" + full_analysis
+    separador = "\n--------------------------------------------------\n\n"
+    
+    full_internal = resumen_final + separador + full_internal
+    full_analysis = resumen_final + separador + full_analysis
 
     st.header("📋 IOC Analizados")
     t_ip, t_hash, t_url = st.tabs([f"🌐 IPs ({len(list_ips)})", f"📄 Archivos ({len(list_hashes)})", f"🔗 URLs/Dominios ({len(list_urls)})"])
