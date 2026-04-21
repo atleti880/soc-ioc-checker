@@ -26,10 +26,10 @@ ABUSE_API = st.secrets["ABUSE_API"]
 VT_HEADERS = {"x-apikey": VT_API}
 ABUSE_HEADERS = {"Key": ABUSE_API, "Accept": "application/json"}
 
-st.set_page_config(page_title="SOC IOC Checker v3.4", page_icon="🛡️", layout="wide")
+st.set_page_config(page_title="SOC IOC Checker v3.5", page_icon="🛡️", layout="wide")
 
 st.title("🛡️ SOC IOC Checker")
-st.caption("Análisis de IOC  VirusTotal & AbuseIP")
+st.caption("Análisis de IOC con manejo de errores VT")
 
 # =========================
 # UTILIDADES
@@ -74,7 +74,7 @@ def vt_url_id(url: str) -> str:
     return base64.urlsafe_b64encode(url.encode()).decode().strip("=")
 
 def get_verdict(vt_m=0, ab_s=0):
-    if ab_s >= 80 or vt_m >= 2: return "Malicioso"
+    if ab_s >= 80 or vt_m >= 5: return "Malicioso"
     if ab_s >= 25 or vt_m >= 1: return "Sospechoso"
     return "Bajo riesgo"
 
@@ -183,12 +183,19 @@ if st.button("Iniciar Análisis", type="primary", use_container_width=True):
             
             vt_id = vt_url_id(ioc) if t == "URL" else ioc
             v_res = requests.get(f"https://www.virustotal.com/api/v3/{'ip_addresses' if t=='IP' else 'files' if t=='Hash' else 'urls'}/{vt_id}", headers=VT_HEADERS)
-            v_attr = v_res.json().get("data", {}).get("attributes", {}) if v_res.status_code == 200 else {}
             
-            vt_m, vt_t = v_attr.get("last_analysis_stats", {}).get("malicious", 0), sum(v_attr.get("last_analysis_stats", {}).values())
-            vt_l = f"https://www.virustotal.com/gui/{'ip-address' if t=='IP' else 'file' if t=='Hash' else 'url'}/{vt_id}"
+            # --- MANEJO DE ERROR VT ---
+            if v_res.status_code == 200:
+                v_attr = v_res.json().get("data", {}).get("attributes", {})
+                vt_m, vt_t = v_attr.get("last_analysis_stats", {}).get("malicious", 0), sum(v_attr.get("last_analysis_stats", {}).values())
+                vt_l = f"https://www.virustotal.com/gui/{'ip-address' if t=='IP' else 'file' if t=='Hash' else 'url'}/{vt_id}"
+                found_in_vt = True
+            else:
+                v_attr = {}
+                vt_m, vt_t = 0, 0
+                vt_l = "No encontrado en VirusTotal"
+                found_in_vt = False
             
-            # --- CORRECCIÓN: Inicialización de variables ---
             details, whois_info, ab_l = {}, "", None
 
             if t == "IP":
@@ -204,11 +211,16 @@ if st.button("Iniciar Análisis", type="primary", use_container_width=True):
                 list_ips.append({"Estado": get_status_icon(verd), "IP": ioc, "País": pais, "ISP": isp, "Abuse": f"{ab_s}%", "VT": f"{vt_m}/{vt_t}", "VirusTotal": vt_l, "AbuseIPDB": ab_l})
 
             elif t == "Hash":
-                sig = v_attr.get("signature_info", {})
-                firm = "Válida" if sig.get("verified") == "Valid" else ("No válida" if sig else "No")
+                if found_in_vt:
+                    sig = v_attr.get("signature_info", {})
+                    firm = "Válida" if sig.get("verified") == "Valid" else ("No válida" if sig else "No")
+                    filename = v_attr.get("meaningful_name", "N/A")
+                else:
+                    firm, filename = "N/A", "No encontrado en VT"
+                
                 verd = get_verdict(vt_m, 0)
-                details.update({"FileType": v_attr.get("type_description", "N/A"), "FileName": v_attr.get("meaningful_name", "N/A"), "Firmado": firm})
-                list_hashes.append({"Estado": get_status_icon(verd), "Hash": ioc, "Nombre": details['FileName'], "Firmado": firm, "VirusTotal": f"{vt_m}/{vt_t}", "VirusTotal": vt_l})
+                details.update({"FileType": v_attr.get("type_description", "N/A"), "FileName": filename, "Firmado": firm})
+                list_hashes.append({"Estado": get_status_icon(verd), "Hash": ioc, "Nombre": filename, "Firmado": firm, "VirusTotal": f"{vt_m}/{vt_t}", "VirusTotal_Link": vt_l})
 
             elif t == "URL":
                 try:
@@ -233,12 +245,12 @@ if st.button("Iniciar Análisis", type="primary", use_container_width=True):
     full_internal = resumen_final + full_internal
     full_analysis = resumen_final + full_analysis
 
-    # RENDERIZADO DE TABLAS
     st.header("📋 IOC Analizados")
     t_ip, t_hash, t_url = st.tabs([f"🌐 IPs ({len(list_ips)})", f"📄 Archivos ({len(list_hashes)})", f"🔗 URLs/Dominios ({len(list_urls)})"])
     
     link_config = {
         "VirusTotal": st.column_config.LinkColumn("VirusTotal", display_text="Ver"),
+        "VirusTotal_Link": st.column_config.LinkColumn("VirusTotal", display_text="Ver"),
         "AbuseIPDB": st.column_config.LinkColumn("AbuseIPDB", display_text="Ver")
     }
 
