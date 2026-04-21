@@ -29,7 +29,7 @@ ABUSE_HEADERS = {"Key": ABUSE_API, "Accept": "application/json"}
 st.set_page_config(page_title="SOC IOC Checker v3.5", page_icon="🛡️", layout="wide")
 
 st.title("🛡️ SOC IOC Checker")
-st.caption("Análisis de IOC con manejo de errores VT")
+st.caption("Análisis de IOC ViruTotal & AbuseIP")
 
 # =========================
 # UTILIDADES
@@ -104,7 +104,7 @@ def build_executive_summary(summary_list):
 # CONSTRUCCIÓN DE REPORTES
 # =========================
 def build_context_block(ioc_type, vt_m, vt_t, details):
-    text = f"REPUTACIÓN Y CONTEXTO\n--------------------------------------------------\n"
+    text = f"REPUTACIÓN Y CONTEXTO\n"
     text += f"● VirusTotal:  {vt_m}/{vt_t} detecciones\n"
     if "ab_s" in details: text += f"● AbuseIPDB Score:  {details['ab_s']}%\n"
     
@@ -128,8 +128,8 @@ def build_internal_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, whois_t
     text += f"● TIPO:          {ioc_type}\n\n"
     text += build_context_block(ioc_type, vt_m, vt_t, details)
     if whois_text:
-        text += f"\n WHOIS / REGISTRO\n--------------------------------------------------\n{whois_text}\n"
-    text += f"\n ENLACES\n--------------------------------------------------\n- VirusTotal: {vt_l}\n"
+        text += f"\n WHOIS / REGISTRO\n{whois_text}\n"
+    text += f"\n ENLACES\n- VirusTotal: {vt_l}\n"
     if ab_l: text += f"- AbuseIP: {ab_l}\n"
     text += "\n" + "═"*60 + "\n\n"
     return text
@@ -139,9 +139,8 @@ def build_analysis_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, ab_l):
     text += f"--------------------------------------------------\n"
     text += f"RESULTADO: {verd.upper()}\n\n"
     text += build_context_block(ioc_type, vt_m, vt_t, details)
-    text += f"\n ENLACES\n--------------------------------------------------\n- VirusTotal: {vt_l}\n"
+    text += f"\n ENLACES\n- VirusTotal: {vt_l}\n"
     if ab_l: text += f"- AbuseIP: {ab_l}\n"
-    text += "--------------------------------------------------\n\n"
     return text
 
 def render_copy_box(title: str, text: str, unique_key: str):
