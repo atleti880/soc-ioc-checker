@@ -90,14 +90,14 @@ def build_executive_summary(summary_list):
     maliciosos = sum(1 for item in summary_list if item['verd'] == "Malicioso")
     sospechosos = sum(1 for item in summary_list if item['verd'] == "Sospechoso")
     
-    resumen = f"RESUMEN EJECUTIVO\nTotal IOCs: {total} | Maliciosos: {maliciosos} | Sospechosos: {sospechosos}\n"
-    resumen += "-"*60 + "\n"
+    resumen = f"RESUMEN Analisis\nTotal IOCs: {total} | Maliciosos: {maliciosos} | Sospechosos: {sospechosos}\n"
+    
     for item in summary_list:
         resumen += f"{item['tipo']}: {item['ioc']} ({item['verd']})\n"
         resumen += f"   VirusTotal: {item['vt_l']}\n"
         if item.get('ab_l'): 
             resumen += f"   AbuseIP: {item['ab_l']}\n"
-    resumen += "-"*60 + "\n\n"
+    resumen += "\n" + "═"*60 + "\n\n"
     return resumen
 
 # =========================
@@ -138,7 +138,6 @@ def build_internal_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, whois_t
 
 def build_analysis_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, ab_l):
     text = f" ANÁLISIS IOC - {ioc}\n"
-    text += "--------------------------------------------------\n"
     text += f"RESULTADO: {verd.upper()}\n\n"
     text += build_context_block(ioc_type, vt_m, vt_t, details)
     text += f"\n ENLACES\n- VirusTotal: {vt_l}\n"
