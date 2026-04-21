@@ -29,7 +29,7 @@ ABUSE_HEADERS = {"Key": ABUSE_API, "Accept": "application/json"}
 st.set_page_config(page_title="SOC IOC Checker v3.5", page_icon="🛡️", layout="wide")
 
 st.title("🛡️ SOC IOC Checker")
-st.caption("Análisis de IOC con manejo de errores VT")
+st.caption("Análisis de IOC VirusTotal & AbuseIP")
 
 # =========================
 # UTILIDADES
@@ -143,6 +143,7 @@ def build_analysis_block(ioc, ioc_type, verd, vt_m, vt_t, vt_l, details, ab_l):
     text += build_context_block(ioc_type, vt_m, vt_t, details)
     text += f"\n ENLACES\n- VirusTotal: {vt_l}\n"
     if ab_l: text += f"- AbuseIP: {ab_l}\n"
+    text += "\n" + "═"*60 + "\n\n"
     return text
 
 def render_copy_box(title: str, text: str, unique_key: str):
