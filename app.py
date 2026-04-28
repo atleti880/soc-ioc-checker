@@ -98,13 +98,13 @@ def build_executive_summary(summary_list):
     maliciosos = sum(1 for item in summary_list if item['verd'] == "Malicioso")
     sospechosos = sum(1 for item in summary_list if item['verd'] == "Sospechoso")
     
-    resumen = f"Resumen Analisis:\nTotal IOCs: {total} | Maliciosos: {maliciosos} | Sospechosos: {sospechosos}\n"
+    resumen = f"Resumen Analisis:\nTotal IOCs: {total} | Maliciosos: {maliciosos} | Sospechosos: {sospechosos}\n\n"
     
     for item in summary_list:
         resumen += f"{item['tipo']}: {item['ioc']} ({item['verd']})\n"
         resumen += f"   VirusTotal: {item['vt_l']}\n"
         if item.get('ab_l'): 
-            resumen += f"   AbuseIP: {item['ab_l']}\n"
+            resumen += f"   AbuseIP: {item['ab_l']}\n\n"
     resumen += "\n" + "═"*60 + "\n\n"
     return resumen
 
