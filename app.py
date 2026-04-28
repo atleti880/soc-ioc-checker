@@ -26,7 +26,7 @@ ABUSE_API = st.secrets["ABUSE_API"]
 VT_HEADERS = {"x-apikey": VT_API}
 ABUSE_HEADERS = {"Key": ABUSE_API, "Accept": "application/json"}
 
-st.set_page_config(page_title="SOC IOC Checker v3.5", page_icon="🛡️", layout="wide")
+st.set_page_config(page_title="SOC IOC Checker v3.6", page_icon="🛡️", layout="wide")
 
 st.title("🛡️ SOC IOC Checker")
 st.caption("Análisis de IOC VirusTotal & AbuseIP")
@@ -34,6 +34,14 @@ st.caption("Análisis de IOC VirusTotal & AbuseIP")
 # =========================
 # UTILIDADES
 # =========================
+def defang_ioc(value: str, ioc_type: str) -> str:
+    """Ofusca URLs e IPs para evitar clics accidentales en reportes."""
+    if ioc_type == "URL":
+        return value.replace(".", "[.]").replace("http", "hxxp")
+    if ioc_type == "IP":
+        return value.replace(".", "[.]")
+    return value
+
 def get_full_country_name(code):
     try:
         if not code or code == "N/A": return "N/A"
@@ -109,7 +117,11 @@ def build_context_block(ioc_type, vt_m, vt_t, details):
     if "ab_s" in details: text += f"● AbuseIPDB Score:  {details['ab_s']}%\n"
     
     if ioc_type == "IP" or "Resolved_IP" in details:
-        if "Resolved_IP" in details: text += f"● IP Resuelta:      {details['Resolved_IP']}\n"
+        # Ofuscamos la IP resuelta también si existe
+        res_ip = details.get('Resolved_IP', 'N/A')
+        if res_ip != 'N/A': res_ip = res_ip.replace(".", "[.]")
+        
+        if "Resolved_IP" in details: text += f"● IP Resuelta:      {res_ip}\n"
         text += f"● Uso detectado:    {details.get('UsageType', 'N/A')}\n"
         text += f"● Proveedor (ISP):  {details.get('ISP', 'N/A')}\n"
         text += f"● País:             {details.get('CountryName', 'N/A')}\n"
@@ -233,11 +245,14 @@ if st.button("Iniciar Análisis", type="primary", use_container_width=True):
                 verd = get_verdict(vt_m, ab_s)
                 whois_info, p_code = get_whois_info(ioc)
                 details.update({"Category": v_attr.get("categories", {}).get("Forcepoint", "N/A"), "CountryName": get_full_country_name(p_code)})
-                list_urls.append({"Estado": get_status_icon(verd), "URL/Dominio": ioc, "Categoría": details['Category'], "IP Resuelta": details.get('Resolved_IP', 'N/A'), "VirusTotal": f"{vt_m}/{vt_t}", "VirusTotal": vt_l, "AbuseIPDB": ab_l})
+                list_urls.append({"Estado": get_status_icon(verd), "URL/Dominio": ioc, "Categoría": details['Category'], "IP Resuelta": details.get('Resolved_IP', 'N/A'), "VirusTotal": vt_l, "AbuseIPDB": ab_l})
 
-            summary_list.append({"ioc": ioc, "tipo": t, "verd": verd, "vt_l": vt_l, "ab_l": ab_l})
-            full_internal += build_internal_block(ioc, t, verd, vt_m, vt_t, vt_l, details, whois_info, ab_l)
-            full_analysis += build_analysis_block(ioc, t, verd, vt_m, vt_t, vt_l, details, ab_l)
+            # --- GENERACIÓN DE REPORTES CON OFUSCACIÓN ---
+            ioc_display = defang_ioc(ioc, t)
+            
+            summary_list.append({"ioc": ioc_display, "tipo": t, "verd": verd, "vt_l": vt_l, "ab_l": ab_l})
+            full_internal += build_internal_block(ioc_display, t, verd, vt_m, vt_t, vt_l, details, whois_info, ab_l)
+            full_analysis += build_analysis_block(ioc_display, t, verd, vt_m, vt_t, vt_l, details, ab_l)
 
     resumen_final = build_executive_summary(summary_list)
     full_internal = resumen_final + full_internal
