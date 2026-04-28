@@ -102,9 +102,9 @@ def build_executive_summary(summary_list):
     
     for item in summary_list:
         resumen += f"{item['tipo']}: {item['ioc']} ({item['verd']})\n"
-        resumen += f"   VirusTotal: {item['vt_l']}\n"
+        resumen += f"  - VirusTotal: {item['vt_l']}\n"
         if item.get('ab_l'): 
-            resumen += f"   AbuseIP: {item['ab_l']}\n\n"
+            resumen += f"  - AbuseIP: {item['ab_l']}\n\n"
     resumen += "\n" + "═"*60 + "\n\n"
     return resumen
 
