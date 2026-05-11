@@ -82,8 +82,8 @@ def vt_url_id(url: str) -> str:
     return base64.urlsafe_b64encode(url.encode()).decode().strip("=")
 
 def get_verdict(vt_m=0, ab_s=0):
-    if ab_s >= 80 or vt_m >= 5: return "Malicioso"
-    if ab_s >= 25 or vt_m >= 1: return "Sospechoso"
+    if ab_s >= 80 or vt_m >= 4: return "Malicioso"
+    if ab_s >= 15 or vt_m >= 2: return "Sospechoso"
     return "Bajo riesgo"
 
 def get_status_icon(verdict: str) -> str:
