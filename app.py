@@ -221,26 +221,27 @@ if st.button("Iniciar Análisis", type="primary", use_container_width=True):
                 list_ips.append({"Estado": get_status_icon(verd), "IP": ioc, "País": pais, "ISP": isp, "Abuse": f"{ab_s}%", "VT": f"{vt_m}/{vt_t}", "VirusTotal": vt_l, "AbuseIPDB": ab_l})
 
             elif t == "Hash":
-    if found_in_vt:
-        sig = v_attr.get("signature_info", {})
-        verified_status = sig.get("verified", "")
-        # "Signed" indica que la firma es válida según la especificación de VirusTotal
-        if verified_status == "Signed":
-            firm = "Válida"
-        elif verified_status == "Unsigned":
-            firm = "No firmado"
-        elif verified_status:
-            firm = f"Problema: {verified_status}" # Muestra detalles si el certificado fue revocado o expiró
-        else:
-            firm = "Sin datos de firma"
+                if found_in_vt:
+                    sig = v_attr.get("signature_info", {})
+                    verified_status = sig.get("verified", "")
 
-        filename = v_attr.get("meaningful_name", "N/A")
-    else:
-        firm, filename = "N/A", "No encontrado en VT"
+                    # "Signed" indica que la firma es válida según la especificación de VirusTotal
+                    if verified_status == "Signed":
+                        firm = "Válida"
+                    elif verified_status == "Unsigned":
+                        firm = "No firmado"
+                    elif verified_status:
+                        firm = f"Problema: {verified_status}" # Muestra detalles si el certificado fue revocado o expiró
+                    else:
+                        firm = "Sin datos de firma"
 
-          verd = get_verdict(vt_m, 0)
-    details.update({"FileType": v_attr.get("type_description", "N/A"), "FileName": filename, "Firmado": firm})
-    list_hashes.append({"Estado": get_status_icon(verd), "Hash": ioc, "Nombre": filename, "Firmado": firm, "VirusTotal": f"{vt_m}/{vt_t}", "VirusTotal_Link": vt_l})
+                    filename = v_attr.get("meaningful_name", "N/A")
+                else:
+                    firm, filename = "N/A", "No encontrado en VT"
+
+                verd = get_verdict(vt_m, 0)
+                details.update({"FileType": v_attr.get("type_description", "N/A"), "FileName": filename, "Firmado": firm})
+                list_hashes.append({"Estado": get_status_icon(verd), "Hash": ioc, "Nombre": filename, "Firmado": firm, "VirusTotal": f"{vt_m}/{vt_t}", "VirusTotal_Link": vt_l})
             elif t == "URL":
                 try:
                     domain = urlparse(ioc if "://" in ioc else "http://"+ioc).netloc
