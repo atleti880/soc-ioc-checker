@@ -224,7 +224,6 @@ if st.button("Iniciar Análisis", type="primary", use_container_width=True):
     if found_in_vt:
         sig = v_attr.get("signature_info", {})
         verified_status = sig.get("verified", "")
-
         # "Signed" indica que la firma es válida según la especificación de VirusTotal
         if verified_status == "Signed":
             firm = "Válida"
